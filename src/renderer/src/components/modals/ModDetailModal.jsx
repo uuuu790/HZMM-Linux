@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Package, Puzzle, Sliders, FileText, RefreshCw, Link2 } from 'lucide-react';
-import { marked } from 'marked';
+import { sanitizeReadme } from '../../utils/sanitize-readme';
 import { getModIcon, cleanModName } from '../../constants/modIcons';
 
 // Map app language codes to readme section headers
@@ -141,7 +141,7 @@ const ModDetailModal = ({ isOpen, mod, onClose, onOpenConfig, t, lang }) => {
     });
     content = content.replace(/`([^`\n]+)`/g, '$1');
     content = content.replace(/\uE000FENCED(\d+)\uE001/g, (_, i) => fenced[+i]);
-    readmeHtml = marked.parse(content, { breaks: true });
+    readmeHtml = sanitizeReadme(content);
   }
 
   return createPortal(

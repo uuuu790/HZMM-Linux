@@ -28,9 +28,15 @@ export default function MultiSelectInput({ value, options, disabled, onChange })
   const toggle = (v) => {
     const next = new Set(selectedSet);
     if (next.has(v)) next.delete(v); else next.add(v);
-    // Preserve schema-declared option order, not click order, so the
-    // serialized lua line stays stable across saves.
+    // Preserve schema-declared option order for known options, then
+    // append any items already present in the value that aren't part of
+    // the schema (custom user entries, schema-removed options). Without
+    // the tail, the first toggle silently wipes any non-canonical item.
+    const schemaValues = new Set(options.map(o => o.value));
     const ordered = options.map(o => o.value).filter(v2 => next.has(v2));
+    for (const item of current) {
+      if (!schemaValues.has(item) && next.has(item)) ordered.push(item);
+    }
     onChange(serializeLuaArray(ordered));
   };
 

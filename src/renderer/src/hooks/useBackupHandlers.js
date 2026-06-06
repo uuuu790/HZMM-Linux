@@ -30,7 +30,7 @@ export function useBackupHandlers({ addToast, showConfirm, t }) {
       await window.api.saves.backup(worldNames);
       addToast(t.toastBackupSuccess, 'success');
       const list = await window.api.saves.listBackups();
-      setBackups(list);
+      setBackups(Array.isArray(list) ? list : []);
     } catch (err) {
       console.error('Backup failed:', err);
       addToast(t.toastBackupFailed || err.message, 'error');
@@ -42,7 +42,7 @@ export function useBackupHandlers({ addToast, showConfirm, t }) {
   const handleListBackups = useCallback(async () => {
     if (!window.api?.saves) return;
     const list = await window.api.saves.listBackups();
-    setBackups(list);
+    setBackups(Array.isArray(list) ? list : []);
   }, []);
 
   const handleRestoreBackup = useCallback((backupPath) => {
@@ -51,7 +51,7 @@ export function useBackupHandlers({ addToast, showConfirm, t }) {
         await window.api.saves.restoreBackup(backupPath);
         addToast(t.toastRestoreSuccess, 'success');
         const list = await window.api.saves.listBackups();
-        setBackups(list);
+        setBackups(Array.isArray(list) ? list : []);
       } catch (err) {
         console.error('Restore failed:', err);
         addToast(err.message || 'Restore failed', 'error');
@@ -64,7 +64,7 @@ export function useBackupHandlers({ addToast, showConfirm, t }) {
       try {
         await window.api.saves.deleteBackup(backupPath);
         const list = await window.api.saves.listBackups();
-        setBackups(list);
+        setBackups(Array.isArray(list) ? list : []);
         addToast(t.toastBackupDeleted || t.toastUninstalled, 'success');
       } catch (err) {
         console.error('Delete backup failed:', err);
@@ -75,7 +75,7 @@ export function useBackupHandlers({ addToast, showConfirm, t }) {
   const initBackups = useCallback(async () => {
     if (window.api?.saves?.listBackups) {
       const list = await window.api.saves.listBackups();
-      setBackups(list);
+      setBackups(Array.isArray(list) ? list : []);
     }
   }, []);
 

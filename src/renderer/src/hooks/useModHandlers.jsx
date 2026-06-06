@@ -117,7 +117,17 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
       </div>
     ) : t.confirmUninstallDesc;
     if (isGameRunning) {
-      showConfirm(t.gameRunningWarning, `${t.gameRunningWarningDesc}\n\n${desc}`, doRemove, 'danger');
+      // Don't string-interpolate `desc` — if it's JSX (hybrid mod case),
+      // template-literal converts it to "[object Object]".
+      const fullDesc = typeof desc === 'string'
+        ? `${t.gameRunningWarningDesc}\n\n${desc}`
+        : (
+          <div>
+            <p className="font-bold mb-2 whitespace-pre-line">{t.gameRunningWarningDesc}</p>
+            {desc}
+          </div>
+        );
+      showConfirm(t.gameRunningWarning, fullDesc, doRemove, 'danger');
     } else {
       showConfirm(t.confirmUninstallTitle, desc, doRemove);
     }
@@ -134,10 +144,11 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
     } catch (err) {
       console.error('Preview failed:', err);
       setPreviewData([]);
+      addToast(`${t.toastInstallFailed || 'Install failed'}: ${err.message || err}`, 'error');
     } finally {
       setPreviewLoading(false);
     }
-  }, []);
+  }, [addToast, t]);
 
   // Direct install — bypasses the preview dialog. Used when the user has
   // opted into "don't show again" on the preview modal (or toggled it in
@@ -150,6 +161,7 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
       addToast(t.toastInstalled, 'success');
     } catch (err) {
       console.error('Install failed:', err);
+      addToast(`${t.toastInstallFailed || 'Install failed'}: ${err.message || err}`, 'error');
     }
   }, [refreshMods, notifyManualChange, addToast, t]);
 
@@ -175,6 +187,7 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
       addToast(t.toastInstalled, 'success');
     } catch (err) {
       console.error('Install failed:', err);
+      addToast(`${t.toastInstallFailed || 'Install failed'}: ${err.message || err}`, 'error');
     }
     setPendingInstallPaths([]);
     setPreviewData([]);
@@ -215,32 +228,52 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
   // --- Batch Operations ---
   const handleBatchToggle = useCallback(async (enable) => {
     if (!window.api || selectedMods.size === 0) return;
-    for (const filename of selectedMods) {
-      const mod = modules.find(m => m.filename === filename);
-      if (mod && mod.enabled !== enable) {
-        await window.api.mods.toggle(filename);
-      }
-    }
-    await refreshMods();
-    notifyManualChange();
-    setSelectedMods(new Set());
-    setBatchMode(false);
-    addToast(enable ? t.toastEnabled : t.toastDisabled, 'success');
-  }, [selectedMods, modules, t, refreshMods, addToast, notifyManualChange]);
-
-  const handleBatchRemove = useCallback(() => {
-    if (selectedMods.size === 0) return;
-    showConfirm(t.confirmBatchDeleteTitle, t.confirmBatchDeleteDesc, async () => {
+    const run = async () => {
+      let failed = 0;
       for (const filename of selectedMods) {
-        await window.api.mods.remove(filename);
+        const mod = modules.find(m => m.filename === filename);
+        if (mod && mod.enabled !== enable) {
+          // One locked/in-use file (common while the game is running) must not
+          // abort the whole batch and leave it silently half-applied.
+          try { await window.api.mods.toggle(filename); }
+          catch (err) { console.error(`Batch toggle failed: ${filename}`, err); failed++; }
+        }
       }
       await refreshMods();
       notifyManualChange();
       setSelectedMods(new Set());
       setBatchMode(false);
-      addToast(t.toastUninstalled, 'warning');
-    });
-  }, [selectedMods, t, showConfirm, refreshMods, addToast, notifyManualChange]);
+      if (failed > 0) addToast(`${t.toastBatchFailed || 'Some mods could not be changed'} (${failed})`, 'error');
+      else addToast(enable ? t.toastEnabled : t.toastDisabled, 'success');
+    };
+    if (isGameRunning) {
+      showConfirm(t.gameRunningWarning, t.gameRunningWarningDesc, run, 'warning');
+    } else {
+      await run();
+    }
+  }, [selectedMods, modules, t, refreshMods, addToast, notifyManualChange, isGameRunning, showConfirm]);
+
+  const handleBatchRemove = useCallback(() => {
+    if (selectedMods.size === 0) return;
+    const run = async () => {
+      let failed = 0;
+      for (const filename of selectedMods) {
+        try { await window.api.mods.remove(filename); }
+        catch (err) { console.error(`Batch remove failed: ${filename}`, err); failed++; }
+      }
+      await refreshMods();
+      notifyManualChange();
+      setSelectedMods(new Set());
+      setBatchMode(false);
+      if (failed > 0) addToast(`${t.toastBatchFailed || 'Some mods could not be removed'} (${failed})`, 'error');
+      else addToast(t.toastUninstalled, 'warning');
+    };
+    if (isGameRunning) {
+      showConfirm(t.gameRunningWarning, t.gameRunningWarningDesc, run, 'danger');
+    } else {
+      showConfirm(t.confirmBatchDeleteTitle, t.confirmBatchDeleteDesc, run);
+    }
+  }, [selectedMods, t, showConfirm, refreshMods, addToast, notifyManualChange, isGameRunning]);
 
   // --- Rename (Custom Display Name) ---
   const handleRenameMod = useCallback(async (modId, customName) => {

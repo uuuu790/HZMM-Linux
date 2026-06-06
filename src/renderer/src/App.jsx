@@ -233,18 +233,7 @@ export default function App() {
 
   useEffect(() => {
     async function init() {
-      if (!window.api) {
-        // Browser dev mode (no Electron preload) — dismiss the splash
-        // so the renderer is inspectable in a normal browser tab. The
-        // rest of init depends on IPC; handlers themselves guard for
-        // `!window.api` and become no-ops in this mode.
-        const splash = document.getElementById('splash-screen');
-        if (splash) {
-          splash.classList.add('exit');
-          setTimeout(() => splash.remove(), 600);
-        }
-        return;
-      }
+      if (!window.api) return;
 
       await Promise.all([
         window.api.locale.getPreference().then(v => setLang(v)),

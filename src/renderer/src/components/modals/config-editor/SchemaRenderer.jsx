@@ -59,9 +59,15 @@ export default function SchemaRenderer({
       }
     });
   }
+  // When the config has any real section markers, the user's file is
+  // structured — don't bleed sectionless top-level keys into section scope.
+  // The '' fallback is only for the legacy case where config.lua has no
+  // section markers at all and every key lives in the '' bucket.
+  const hasStructuredSections = Object.keys(keyIndexMap).some(k => k !== '');
   const resolveEntryIdx = (sectionId, keyName) => {
     const exact = keyIndexMap[sectionId]?.[keyName];
     if (exact !== undefined) return exact;
+    if (hasStructuredSections) return undefined;
     return keyIndexMap['']?.[keyName];
   };
 
@@ -177,20 +183,27 @@ export default function SchemaRenderer({
               const rawDescription = resolveI18n(keyDef.description, lang);
               let description = rawDescription;
               if (rawDescription) {
-                // 1. 簡單 {value} → currentValue 替換
-                description = rawDescription.replace(/\{value\}/g, currentValue);
-                // 2. {eval: expression} → 即時計算結果(expression 內可用 value, +-*/(), 數字)
-                description = description.replace(/\{eval:\s*([^}]+)\}/g, (match, expr) => {
+                // Order matters: run {eval:} against the schema-author-
+                // controlled rawDescription FIRST. If we ran {value}
+                // substitution first, a malicious config.lua string value
+                // like `"{eval: maliciousCode()}"` would be inlined into
+                // description and then executed by `new Function` (CSP
+                // allows unsafe-eval in this renderer).
+                description = rawDescription.replace(/\{eval:\s*([^}]+)\}/g, (match, expr) => {
                   try {
+                    // audit:allow NEW-FUNCTION-RENDERER
+                    // expr is from rawDescription (schema-author content),
+                    // not from currentValue (user data) — order of substitution
+                    // above ensures attacker-controlled strings never reach here.
                     const fn = new Function('value', `return (${expr})`);
                     const result = fn(parseFloat(currentValue) || 0);
                     if (!Number.isFinite(result)) return match;
-                    // 整數顯示整數,小數顯示小數點後 2 位
                     return Number.isInteger(result) ? String(result) : result.toFixed(2);
                   } catch {
-                    return match; // parse fail 就保留原 token,不打斷渲染
+                    return match;
                   }
                 });
+                description = description.replace(/\{value\}/g, currentValue);
               }
 
               // showWhen conditional visibility — bypass while searching so

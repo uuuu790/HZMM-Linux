@@ -15,6 +15,27 @@ export function resolveI18n(obj, lang) {
   return obj[lang] || obj['en'] || Object.values(obj)[0] || '';
 }
 
+// Find index of inline Lua `-- comment` while skipping content inside
+// quoted strings. Returns -1 if no inline comment present. Mirrors the
+// original `/(\s+--\s*.*)$/` semantics: requires whitespace before `--`.
+function findInlineCommentStart(s) {
+  let inQuote = false;
+  let quoteChar = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inQuote) {
+      if (c === '\\' && i + 1 < s.length) { i++; continue; }
+      if (c === quoteChar) { inQuote = false; quoteChar = null; }
+    } else {
+      if (c === '"' || c === "'") { inQuote = true; quoteChar = c; }
+      else if ((c === ' ' || c === '\t') && s[i + 1] === '-' && s[i + 2] === '-') {
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
 // 統一解析 config 檔案（支援 INI / Lua / 混合格式）
 export function parseConfigFile(text) {
   const lines = text.split('\n');
@@ -81,14 +102,16 @@ export function parseConfigFile(text) {
       let value = kvMatch[2].trim();
       if (value.endsWith(',')) value = value.slice(0, -1).trim();
 
-      // 提取行內註解 (-- comment)，保留原始尾段以便存回
+      // 提取行內註解 (-- comment)，保留原始尾段以便存回。
+      // 注意：偵測 `--` 時要 skip 引號內部，否則像 `Desc = "TODO -- fix"`
+      // 會把 `--` 誤認為註解、把 value 切成 `"TODO`、round-trip 後損壞。
       let inlineDesc = null;
       let trailing = '';
-      const dashMatch = value.match(/^(.+?)(\s+--\s*.*)$/);
-      if (dashMatch) {
-        value = dashMatch[1].trim();
-        trailing = dashMatch[2];
-        const descText = dashMatch[2].replace(/^.*--\s*/, '').trim();
+      const dashIdx = findInlineCommentStart(value);
+      if (dashIdx !== -1) {
+        trailing = value.slice(dashIdx);
+        value = value.slice(0, dashIdx).trim();
+        const descText = trailing.replace(/^.*?--\s*/, '').trim();
         inlineDesc = descText.replace(/^\d+\s*[-–—]\s*/, '').trim() || null;
       }
 
@@ -241,6 +264,15 @@ export function valueNeedsQuote(type) {
   return type === 'string' || type === 'text' || type === 'color' || type === 'keybind';
 }
 
+// A close-quote is escaped only when preceded by an odd number of
+// backslashes. Single-char lookback (`s[i-1] !== '\\'`) wrongly treats
+// `\\"` (literal backslash + close quote) as escaped → merges items.
+function isQuoteEscaped(s, idx) {
+  let count = 0;
+  for (let j = idx - 1; j >= 0 && s[j] === '\\'; j--) count++;
+  return count % 2 === 1;
+}
+
 // Parse a Lua-style array literal like `{"a", "b", "c"}` into a JS string
 // array. Returns null when the input doesn't look like an array literal,
 // so callers can distinguish "empty list" from "not a list at all".
@@ -261,7 +293,7 @@ export function parseLuaArray(value) {
   for (let i = 0; i < inner.length; i++) {
     const c = inner[i];
     if (!inQuote && (c === '"' || c === "'")) { inQuote = true; quoteChar = c; current += c; }
-    else if (inQuote && c === quoteChar && inner[i - 1] !== '\\') { inQuote = false; quoteChar = null; current += c; }
+    else if (inQuote && c === quoteChar && !isQuoteEscaped(inner, i)) { inQuote = false; quoteChar = null; current += c; }
     else if (!inQuote && c === ',') { items.push(current.trim()); current = ''; }
     else current += c;
   }
@@ -269,10 +301,24 @@ export function parseLuaArray(value) {
   return items.map(raw => {
     const t = raw.trim();
     if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
-      return t.slice(1, -1).replace(/\\"/g, '"');
+      return unescapeLuaString(t.slice(1, -1));
     }
     return t;
   });
+}
+
+// Single-pass unescape for the subset of Lua escape sequences we emit:
+// `\\` → `\`, `\"` → `"`, `\'` → `'`. Anything else stays literal.
+function unescapeLuaString(s) {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\' && i + 1 < s.length) {
+      const next = s[i + 1];
+      if (next === '\\' || next === '"' || next === "'") { out += next; i++; continue; }
+    }
+    out += s[i];
+  }
+  return out;
 }
 
 // Serialize a JS string array back into a Lua array literal. Always
@@ -281,5 +327,8 @@ export function parseLuaArray(value) {
 export function serializeLuaArray(arr) {
   if (!Array.isArray(arr)) return '{}';
   if (arr.length === 0) return '{}';
-  return '{' + arr.map(s => `"${String(s).replace(/"/g, '\\"')}"`).join(', ') + '}';
+  // Escape backslash BEFORE quote so `\` → `\\` doesn't double-escape the
+  // quote we just wrote. Pair with parseLuaArray's escape-aware close-quote
+  // detection so values containing `\` round-trip cleanly.
+  return '{' + arr.map(s => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(', ') + '}';
 }

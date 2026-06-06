@@ -9,6 +9,8 @@ import { Keyboard, X } from 'lucide-react';
 // state at the moment the main key was pressed. Pure modifier presses
 // (Ctrl alone, Shift alone) are ignored — we wait for an actual key.
 
+import { codeToMainKey } from '../../../utils/widget-helpers';
+
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta']);
 
 function buildCombo(e) {
@@ -17,9 +19,7 @@ function buildCombo(e) {
   if (e.shiftKey) parts.push('Shift');
   if (e.altKey) parts.push('Alt');
   if (e.metaKey) parts.push('Meta');
-  // Use printable form for letters, otherwise the named key (F6, ArrowUp).
-  const main = e.key.length === 1 ? e.key.toUpperCase() : e.key;
-  parts.push(main);
+  parts.push(codeToMainKey(e.code));
   return parts.join('+');
 }
 

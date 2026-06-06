@@ -16,7 +16,10 @@ const ConfirmModal = ({ isOpen, title, description, onConfirm, onCancel, t, conf
         </div>
 
         <h3 className="text-lg font-black text-slate-800 dark:text-white tracking-tight">{title}</h3>
-        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed whitespace-pre-line">{description}</p>
+        {typeof description === 'string'
+          ? <p className="text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed whitespace-pre-line">{description}</p>
+          : <div className="text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed">{description}</div>
+        }
 
         <div className="flex items-center gap-3 w-full mt-2">
           <button

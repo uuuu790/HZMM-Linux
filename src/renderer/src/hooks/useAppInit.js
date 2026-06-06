@@ -135,6 +135,7 @@ export function useAppInit({ addToast, t, refreshMods }) {
     const timeout = setTimeout(() => setLaunchState('idle'), 30000);
     try {
       await window.api.game.launch();
+      clearTimeout(timeout);
     } catch (err) {
       console.error('Launch failed:', err);
       setLaunchState('idle');

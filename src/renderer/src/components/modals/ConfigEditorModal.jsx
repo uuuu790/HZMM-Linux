@@ -158,14 +158,33 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
     if (!mod || configFiles.length === 0) return;
 
     setSaving(true);
+    // Clamp numeric entries against schema min/max BEFORE persisting.
+    // SliderInput / plain numeric inputs only clamp on blur, so a user
+    // who types out-of-range and immediately clicks Save (mousedown
+    // before input blur) would otherwise persist an unbounded value.
+    const normalizedEntries = entries.map((e, i) => {
+      if (e.type !== 'keyval') return e;
+      const def = keyDefByEntry?.[i];
+      if (!def || (def.min === undefined && def.max === undefined)) return e;
+      const isInt = def.type === 'int';
+      const isFloat = def.type === 'float';
+      if (!isInt && !isFloat) return e;
+      let n = isInt ? parseInt(e.value, 10) : parseFloat(e.value);
+      if (isNaN(n)) return e;
+      if (def.min !== undefined) n = Math.max(def.min, n);
+      if (def.max !== undefined) n = Math.min(def.max, n);
+      const newStr = isInt ? String(Math.round(n)) : String(parseFloat(n.toFixed(4)));
+      return newStr === e.value ? e : { ...e, value: newStr };
+    });
     try {
       // 按檔案分組儲存
       for (const file of configFiles) {
-        const fileEntries = entries.filter(e => e._file?.relativePath === file.relativePath);
+        const fileEntries = normalizedEntries.filter(e => e._file?.relativePath === file.relativePath);
         const text = serializeConfig(fileEntries);
         await window.api.mods.saveConfig(mod.filename, file.relativePath, text);
       }
-      setOriginalEntries(JSON.parse(JSON.stringify(entries)));
+      setEntries(normalizedEntries);
+      setOriginalEntries(JSON.parse(JSON.stringify(normalizedEntries)));
       addToast(t.toastConfigSaved, 'success');
     } catch {
       addToast(t.toastConfigError, 'error');
@@ -201,20 +220,30 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
   }, [schema, entries]);
 
   const handleReset = () => {
-    // Schema mode: reset every key with a schema-declared `default` to that
-    // default. Keys without a default keep their current value (we can't
-    // invent a default that doesn't exist). Comment mode has no schema, so
-    // fall back to the previous "discard unsaved" behavior.
+    // Schema mode:
+    //  - Key with schema `default`: reset value to that default.
+    //  - Optional key WITHOUT default: reset means absent → remove entry.
+    //  - Non-optional key without default: nothing to reset to, leave alone.
+    // Comment mode has no schema → discard unsaved edits.
     if (!keyDefByEntry) {
       setEntries(JSON.parse(JSON.stringify(originalEntries)));
       return;
     }
-    setEntries(prev => prev.map((entry, i) => {
-      if (entry.type !== 'keyval') return entry;
-      const defaultStr = defaultToValueStr(keyDefByEntry[i]);
-      if (defaultStr === null) return entry;
-      return { ...entry, value: defaultStr };
-    }));
+    setEntries(prev => {
+      const out = [];
+      prev.forEach((entry, i) => {
+        if (entry.type !== 'keyval') { out.push(entry); return; }
+        const def = keyDefByEntry[i];
+        const defaultStr = defaultToValueStr(def);
+        if (defaultStr === null) {
+          if (def?.optional) return; // drop — revert to "absent"
+          out.push(entry);
+          return;
+        }
+        out.push({ ...entry, value: defaultStr });
+      });
+      return out;
+    });
   };
 
   const hasChanges = JSON.stringify(entries) !== JSON.stringify(originalEntries);
@@ -228,8 +257,15 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       if (entry.type !== 'keyval') continue;
-      const defaultStr = defaultToValueStr(keyDefByEntry[i]);
-      if (defaultStr === null) continue; // no default declared → ignore
+      const def = keyDefByEntry[i];
+      const defaultStr = defaultToValueStr(def);
+      if (defaultStr === null) {
+        // Optional key currently present is by definition "not at default"
+        // (default = absent). Non-optional keys without a default don't
+        // participate in the reset.
+        if (def?.optional) return false;
+        continue;
+      }
       if (entry.value !== defaultStr) return false;
     }
     return true;

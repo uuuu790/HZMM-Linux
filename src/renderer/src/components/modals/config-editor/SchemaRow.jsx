@@ -1,5 +1,6 @@
 import { RotateCcw } from 'lucide-react';
 import TypeBadge from './TypeBadge';
+import { typedDefaultSeed } from '../../../utils/widget-helpers';
 import OpenPathButton from './OpenPathButton';
 import ColorPicker from './ColorPicker';
 import KeybindInput from './KeybindInput';
@@ -48,7 +49,10 @@ export default function SchemaRow({
       // optional key shared across sections drops every sibling entry too.
       onRemoveOptional?.(keyName, sectionId);
     } else {
-      const seed = defaultStr ?? '';
+      // Optional keys without a schema default need a type-appropriate
+      // seed. Bare `''` for int/float/bool/list/multi-select produces
+      // `key = ,` (Lua syntax error) because those types serialize unquoted.
+      const seed = defaultStr ?? typedDefaultSeed(type);
       // sectionHint lets the parser place the new line inside its proper
       // section in config.lua (rather than dumping every toggle-on at the
       // file bottom).

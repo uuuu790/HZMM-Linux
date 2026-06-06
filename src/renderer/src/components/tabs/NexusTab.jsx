@@ -140,6 +140,7 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
     setLoading(true);
     setError(null);
 
+    if (!window.api) { setLoading(false); setMods([]); setTotalCount(0); return; }
     const loader = debouncedQuery
       ? window.api.nexus.searchMods(debouncedQuery)
       : window.api.nexus.listMods(category);
@@ -496,6 +497,7 @@ export default function NexusTab({ t, lang, addToast, setActiveTab }) {
 
   const runValidate = () => {
     setState({ loading: true });
+    if (!window.api) { setState({ loading: false, ready: false, reason: 'no-electron' }); return; }
     window.api.nexus.validate().then(res => {
       // V1 validate returns: ok (premium), or { ok:false, reason } for no-key/invalid/network.
       if (res.ok) {

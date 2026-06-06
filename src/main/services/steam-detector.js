@@ -1,11 +1,10 @@
-import { join } from 'path'
+import { join, resolve, sep } from 'path'
 import fs from 'fs'
 import os from 'os'
 import { net } from 'electron'
 import configStore from './config-store.js'
 
-const HUMANITZ_APP_ID = '2358160'
-const HUMANITZ_STORE_APP_ID = '1766060' // Steam store uses different ID for news
+const HUMANITZ_APP_ID = '1766060' // 遊戲本體 app id：appmanifest / 啟動 / news 同一個
 const HUMANITZ_FOLDER_NAME = 'HumanitZ'
 
 let cachedSteamPath = undefined
@@ -89,6 +88,22 @@ function detectGamePath() {
   }
 
   return null
+}
+
+// Whether gamePath is the Steam-managed copy (under a Steam library's
+// steamapps/common). Only then is launching via steam:// correct — a
+// manually-set non-Steam copy isn't orchestrated by Steam. On Linux this
+// also gates Proton: a Steam-managed copy gets the user's Proton/launch
+// options; a non-Steam path has no Wine prefix to run through.
+function isSteamGame(gamePath) {
+  const steamPath = getSteamPath()
+  if (!steamPath || !gamePath) return false
+  const norm = resolve(gamePath).toLowerCase()
+  for (const lib of parseLibraryFolders(steamPath)) {
+    const common = resolve(join(lib, 'steamapps', 'common')).toLowerCase()
+    if (norm === common || norm.startsWith(common + sep)) return true
+  }
+  return false
 }
 
 function getPaksPath(gamePath) {
@@ -180,7 +195,7 @@ function getProtonPrefix() {
 
 function fetchGameVersionFromSteamNews() {
   return new Promise((resolve) => {
-    const url = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${HUMANITZ_STORE_APP_ID}&count=20&maxlength=0`
+    const url = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${HUMANITZ_APP_ID}&count=20&maxlength=0`
     const request = net.request(url)
     let body = ''
 
@@ -257,6 +272,7 @@ async function getGameVersion(gamePath) {
 
 export {
   detectGamePath,
+  isSteamGame,
   getPaksPath,
   getAllPaksPaths,
   getGameExe,
@@ -265,5 +281,6 @@ export {
   getGameVersionCached,
   getSteamPath,
   getSteamInstallType,
-  getProtonPrefix
+  getProtonPrefix,
+  HUMANITZ_APP_ID
 }

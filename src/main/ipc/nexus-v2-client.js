@@ -16,6 +16,7 @@ export const GAME_DOMAIN = 'humanitz'
 export const GAME_ID = 5743
 
 const DEFAULT_BROWSE_COUNT = 100
+const REQUEST_TIMEOUT_MS = 10000
 
 // Shared fragment used everywhere we return a mod card.
 const MOD_CARD_FIELDS = `
@@ -77,6 +78,12 @@ function gqlRequest(query, variables) {
       })
     })
     req.on('error', reject)
+    // Abort if Nexus accepts the TCP connection but never responds. Without
+    // this, the UI spinner spins indefinitely (no error path) on a hung API.
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      req.destroy()
+      reject(new Error('Nexus V2 GraphQL request timed out'))
+    })
     req.write(body)
     req.end()
   })

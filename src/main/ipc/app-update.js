@@ -1,61 +1,24 @@
-import { ipcMain, app } from 'electron'
-import { spawn } from 'child_process'
-import { checkForUpdate, downloadUpdate } from '../services/app-updater.js'
-import configStore from '../services/config-store.js'
-import path from 'path'
-import fs from 'fs'
+import { ipcMain, app, shell } from 'electron'
+import { checkForUpdate } from '../services/app-updater.js'
 import logger from '../services/logger.js'
 
-// Characters that break batch-script quoting or line structure.
-// Double-quote and single-quote would terminate the surrounding "..."
-// CR / LF would inject new batch lines.
-// % and ! are variable-expansion sigils.
-// & | < > ^ are shell metacharacters.
-// Null byte would truncate the string in native APIs.
-const UNSAFE_BATCH_PATH_CHARS = /[%!^&|<>"'\r\n\0]/
+// Linux fork: there is NO auto-install. electron-builder ships an AppImage /
+// deb that the user installs manually, so the Windows "download the new .exe,
+// copy it over the running binary, relaunch" flow does not apply here. The
+// app only DETECTS a new GitHub release and points the user at the releases
+// page to download the new AppImage/deb themselves.
+//
+// The IPC channel names mirror Windows exactly so the shared renderer
+// (useUpdateHandlers / SettingsTab) drives both platforms unchanged:
+//   app-update:get-version  -> current version
+//   app-update:check        -> detect a newer release (+ changelog)
+//   app-update:download      -> advance the UI to its "ready" state (no binary
+//                              is fetched on Linux — see below)
+//   app-update:install       -> open the releases page for a MANUAL download
+//   app-update:progress     -> download progress channel (unused on Linux)
+const RELEASES_URL = 'https://github.com/uuuu790/HZMM/releases/latest'
 
-export function assertSafeBatchPath(label, value) {
-  if (typeof value !== 'string' || !value) {
-    throw new Error(`${label}: path must be a non-empty string`)
-  }
-  if (UNSAFE_BATCH_PATH_CHARS.test(value)) {
-    throw new Error(`${label}: path contains characters unsafe for batch execution`)
-  }
-  if (!path.isAbsolute(value)) {
-    throw new Error(`${label}: path must be absolute`)
-  }
-}
-
-// Pure function — easy to unit test. Throws on any unsafe input.
-export function generateUpdaterBatch(newExePath, currentExePath) {
-  assertSafeBatchPath('newExePath', newExePath)
-  assertSafeBatchPath('currentExePath', currentExePath)
-
-  // Copy may fail with "file in use" when Windows Defender / slow shutdown
-  // keeps the exe locked past the initial 2s delay. Retry up to 10 times
-  // with a 1s pause between attempts before giving up.
-  return [
-    '@echo off',
-    'timeout /t 2 /nobreak >nul',
-    'set /a tries=0',
-    ':retry',
-    `copy /y "${newExePath}" "${currentExePath}" >nul`,
-    'if errorlevel 1 (',
-    '  set /a tries+=1',
-    '  if %tries% geq 10 (',
-    '    echo Update copy failed after 10 retries >&2',
-    '    exit /b 1',
-    '  )',
-    '  timeout /t 1 /nobreak >nul',
-    '  goto retry',
-    ')',
-    `del /f "${newExePath}" >nul 2>&1`,
-    `start "" "${currentExePath}"`,
-    `del /f "%~f0" >nul 2>&1`,
-  ].join('\r\n')
-}
-
-function registerAppUpdateIpc(mainWindow) {
+function registerAppUpdateIpc(_mainWindow) {
   ipcMain.handle('app-update:get-version', () => {
     return app.getVersion()
   })
@@ -69,64 +32,36 @@ function registerAppUpdateIpc(mainWindow) {
     }
   })
 
-  // Bug 9 fix: accept downloadUrl from frontend to avoid redundant checkForUpdate call
-  // Security: URL is validated against allowed hosts, SHA256 verified if available
-  ipcMain.handle('app-update:download', async (_, downloadUrl, expectedHash) => {
+  // Renderer-supplied URL/hash are IGNORED (mirrors the Windows hardening: an
+  // XSS-compromised renderer must not be able to point the updater anywhere).
+  // On Linux this does NOT fetch a binary — there is nothing to auto-stage,
+  // because the actual download is manual. It simply re-confirms an update
+  // exists and resolves so the shared renderer advances to its "ready" state,
+  // at which point the install action opens the releases page.
+  ipcMain.handle('app-update:download', async () => {
     try {
-      if (!downloadUrl) {
-        throw new Error('No download URL provided')
+      const release = await checkForUpdate()
+      if (!release.hasUpdate) {
+        throw new Error('No update available')
       }
-
-      const filePath = await downloadUpdate(downloadUrl, expectedHash || null, (progress) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('app-update:progress', progress)
-        }
-      })
-
-      return { filePath }
+      // No download-and-swap on Linux. Resolve with a null path to keep the
+      // { filePath } return shape the renderer expects.
+      return { filePath: null }
     } catch (err) {
       logger.error(`Update download failed: ${err.message}`)
       throw err
     }
   })
 
-  ipcMain.handle('app-update:install', () => {
-    const newExePath = path.join(configStore.getConfigDir(), 'hzmm-update.exe')
-    if (!fs.existsSync(newExePath)) {
-      throw new Error('Update file not found. Please download first.')
-    }
-
-    const currentExePath = app.getPath('exe')
-    const batPath = path.join(configStore.getConfigDir(), 'updater.bat')
-
-    // Preflight: writable target, unsafe-char validation done inside generateUpdaterBatch
-    try {
-      fs.accessSync(currentExePath, fs.constants.W_OK)
-    } catch (err) {
-      throw new Error(`Cannot write to current executable: ${err.message}`)
-    }
-
-    const batContent = generateUpdaterBatch(newExePath, currentExePath)
-
-    fs.writeFileSync(batPath, batContent, 'utf-8')
-    logger.info(`Update script created: ${batPath}`)
-    logger.info(`Replacing: ${currentExePath}`)
-
-    const child = spawn('cmd', ['/c', batPath], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true
-    })
-
-    child.on('error', (err) => {
-      logger.error(`Failed to start updater: ${err.message}`)
-    })
-
-    child.unref()
-
-    setTimeout(() => {
-      app.quit()
-    }, 500)
+  // Manual-download path: open the GitHub releases page so the user can grab
+  // the new AppImage/deb. Deliberately NOT an executable swap — no temp-file
+  // copy, no PORTABLE_EXECUTABLE_FILE, no relaunch, no rollback (all of which
+  // are Windows-portable-only). The channel name matches Windows so the shared
+  // "Install" button works; the behavior is Linux's manual download.
+  ipcMain.handle('app-update:install', async () => {
+    logger.info(`Opening releases page for manual download: ${RELEASES_URL}`)
+    await shell.openExternal(RELEASES_URL)
+    return { manual: true, url: RELEASES_URL }
   })
 }
 

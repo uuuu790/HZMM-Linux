@@ -70,6 +70,34 @@ function cleanUe4ssFiles(binPath) {
   }
 }
 
+// UE4SS-settings.ini lives in one of two places depending on the install
+// layout. Both are user-editable (graphics API, console toggles, custom
+// keybinds).
+const UE4SS_SETTINGS_RELATIVE_PATHS = ['UE4SS-settings.ini', path.join('ue4ss', 'UE4SS-settings.ini')]
+
+function snapshotUserSettings(installPath) {
+  const saved = []
+  for (const rel of UE4SS_SETTINGS_RELATIVE_PATHS) {
+    const full = path.join(installPath, rel)
+    if (fs.existsSync(full)) {
+      try { saved.push({ path: full, content: fs.readFileSync(full) }) } catch { /* unreadable */ }
+    }
+  }
+  return saved
+}
+
+function restoreUserSettings(saved) {
+  for (const { path: full, content } of saved) {
+    try {
+      fs.mkdirSync(path.dirname(full), { recursive: true })
+      fs.writeFileSync(full, content)
+      logger.info(`Preserved UE4SS-settings.ini at ${full}`)
+    } catch (err) {
+      logger.warn(`Failed to restore UE4SS-settings.ini: ${err.message}`)
+    }
+  }
+}
+
 // UE4SS 3.0+ ships DLLs under `Win64/ue4ss/`, which fails to load under
 // Wine/Proton — Wine's DLL resolver doesn't follow the same subdirectory
 // layout as the Windows loader. Flattening everything back into `Win64/`
@@ -123,11 +151,21 @@ async function doInstall(mainWindow) {
       }
     })
 
+    // Capture user-customized UE4SS-settings.ini BEFORE clean + extract.
+    // cleanUe4ssFiles unlinks it directly, and even if it didn't, the
+    // archive's fresh settings.ini would overwrite during extract.
+    const savedSettings = snapshotUserSettings(installPath)
+
     // 清理舊版本檔案（保留使用者 Mods）
     cleanUe4ssFiles(installPath)
 
     // Extract to game directory (不走 mod 分析，直接全部解壓)
     await extractZipRaw(tempZip, installPath)
+
+    // Put user's settings back (overwriting freshly-extracted defaults) at
+    // their original layout location, then flatten — so the restored ini is
+    // moved into Win64/ alongside the DLLs and ends where Wine actually reads it.
+    restoreUserSettings(savedSettings)
 
     // Flatten Win64/ue4ss/* → Win64/* for Wine/Proton compatibility.
     flattenUe4ssLayout(installPath)

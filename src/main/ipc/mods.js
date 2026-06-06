@@ -72,7 +72,9 @@ function registerModsIpc(mainWindow) {
   })
 
   // --- Toggle ---
-  ipcMain.handle('mods:toggle', (_, filename) => {
+  // Serialized with install/remove so concurrent operations on the same
+  // mod's enabled.txt / pak rename / mods.txt don't interleave.
+  ipcMain.handle('mods:toggle', (_, filename) => serializeModWrite(() => {
     assertSafeSegment('filename', filename)
     const gamePath = configStore.get('gamePath')
     if (!gamePath) throw new Error('Game path not set')
@@ -107,6 +109,9 @@ function registerModsIpc(mainWindow) {
           const allPaksPaths = getAllPaksPaths(gamePath)
           for (const pakName of (linkedPaks || [])) {
             const baseName = pakName.replace('.disabled', '')
+            // _hzmm_link.json is attacker-authorable (shipped inside a mod) —
+            // keep linked pak names a flat in-dir segment before touching fs.
+            try { assertSafeSegment('linkedPak', baseName) } catch { continue }
             for (const pp of allPaksPaths) {
               const enabledPath = path.join(pp, baseName)
               const disabledPath = path.join(pp, baseName + '.disabled')
@@ -195,7 +200,7 @@ function registerModsIpc(mainWindow) {
       enabled: pakNowEnabled,
       path: newPath
     }
-  })
+  }))
 
   // --- Install ---
   ipcMain.handle('mods:install', (_, filePaths) =>
@@ -203,7 +208,9 @@ function registerModsIpc(mainWindow) {
   )
 
   // --- Remove ---
-  ipcMain.handle('mods:remove', (_, filename) => {
+  // Serialized with install/toggle so concurrent operations don't
+  // interleave on the same hybrid link files / mods.txt.
+  ipcMain.handle('mods:remove', (_, filename) => serializeModWrite(() => {
     assertSafeSegment('filename', filename)
     const gamePath = configStore.get('gamePath')
     if (!gamePath) throw new Error('Game path not set')
@@ -225,6 +232,7 @@ function registerModsIpc(mainWindow) {
           const allPaksPaths = getAllPaksPaths(gamePath)
           for (const pakName of (linkedPaks || [])) {
             const baseName = pakName.replace('.disabled', '')
+            try { assertSafeSegment('linkedPak', baseName) } catch { continue }
             for (const pp of allPaksPaths) {
               const ep = path.join(pp, baseName)
               const dp = path.join(pp, baseName + '.disabled')
@@ -291,7 +299,7 @@ function registerModsIpc(mainWindow) {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mods:updated')
     logger.info(`Mod removed: ${filename}`)
     return true
-  })
+  }))
 
   // --- Install Preview ---
   ipcMain.handle('mods:preview', async (_, filePaths) => {
@@ -343,6 +351,7 @@ function registerModsIpc(mainWindow) {
           const analysis = await extractRar(filePath, null, true)
           mods = analysis.mods || []
           type = analysis.type
+          totalFiles = (analysis.entryNames || []).filter(n => !n.endsWith('/')).length
         }
 
         // Check each mod for existing conflicts

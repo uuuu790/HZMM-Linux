@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import configStore from '../services/config-store.js'
 import logger from '../services/logger.js'
-import { isPathWithin } from '../services/path-safety.js'
+import { isPathWithin, assertSafeSegment } from '../services/path-safety.js'
 
 function getSavePath() {
   const localAppData = process.env.LOCALAPPDATA
@@ -19,7 +19,8 @@ function registerSavesIpc(_mainWindow) {
   ipcMain.handle('saves:list-worlds', () => {
     const savePath = getSavePath()
     if (!savePath) return []
-    const files = fs.readdirSync(savePath)
+    let files
+    try { files = fs.readdirSync(savePath) } catch { return [] }
     const globalFiles = new Set(['CC_Presets.sav', 'LocalGlobal.sav', 'SaveCache.sav', 'DedSave_ResGlobal.sav', 'SavedSettings.sav', 'steam_autocloud.vdf', 'Save_ClanData.sav'])
     const worldNames = new Set()
     for (const file of files) {
@@ -60,6 +61,7 @@ function registerSavesIpc(_mainWindow) {
     const worlds = []
     let totalSize = 0
     for (const name of worldNames) {
+      assertSafeSegment('worldName', name)
       const worldDir = path.join(worldsDir, name)
       fs.mkdirSync(worldDir, { recursive: true })
       const filesToCopy = [`Save_${name}.sav`, `${name}_CharPreview.sav`, `${name}_Foliage.sav`]
@@ -113,9 +115,14 @@ function registerSavesIpc(_mainWindow) {
     if (!fs.existsSync(worldsDir)) throw new Error('No worlds directory in backup')
     const restoredWorlds = []
     for (const worldName of fs.readdirSync(worldsDir)) {
+      // worldName / file come from disk but the backup folder is
+      // user-modifiable. Validate as flat segments before joining into
+      // savePath so a hand-edited backup can't write outside the save dir.
+      try { assertSafeSegment('worldName', worldName) } catch { continue }
       const worldDir = path.join(worldsDir, worldName)
       if (!fs.statSync(worldDir).isDirectory()) continue
       for (const file of fs.readdirSync(worldDir)) {
+        try { assertSafeSegment('file', file) } catch { continue }
         fs.copyFileSync(path.join(worldDir, file), path.join(savePath, file))
       }
       restoredWorlds.push(worldName)

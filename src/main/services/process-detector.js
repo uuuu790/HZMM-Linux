@@ -1,12 +1,14 @@
 import { exec } from 'child_process'
 import { promisify } from 'util'
-import path from 'path'
 
 const execAsync = promisify(exec)
 
-const KNOWN_EXE_NAMES = [
-  'HumanitZ-Win64-Shipping.exe',
-  'HumanitZ.exe'
+// 只偵測 shipping 進程作為「遊戲是否運行中」的依據。根目錄 HumanitZ.exe 是
+// ~190KB 的 launcher/bootstrap，生命週期綁在 shipping 上、在異常結束時可能殘留；
+// 真正代表遊戲在玩的是 Binaries/Win64 的 shipping 進程，退出遊戲時必定結束。
+// 在 Proton 下這顆 .exe 由 wine64-preloader 載入，仍以這個名字出現在命令列。
+export const GAME_PROCESS_NAMES = [
+  'HumanitZ-Win64-Shipping.exe'
 ]
 
 const VALID_EXE_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/
@@ -27,16 +29,8 @@ export function parsePgrepOutput(stdout, expectedExeName) {
   return false
 }
 
-async function isGameRunning(gameExePath) {
-  const exeNames = [...KNOWN_EXE_NAMES]
-  if (gameExePath) {
-    const exeName = path.basename(gameExePath)
-    if (!exeNames.includes(exeName)) {
-      exeNames.unshift(exeName)
-    }
-  }
-
-  for (const exeName of exeNames) {
+async function isGameRunning() {
+  for (const exeName of GAME_PROCESS_NAMES) {
     // Skip exe names with invalid characters to prevent command injection —
     // pgrep takes a regex pattern, so unescaped metacharacters would also
     // change the match semantics, not just risk injection.

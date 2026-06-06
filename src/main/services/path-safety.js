@@ -28,6 +28,14 @@ export function assertSafeSegment(label, name) {
   if (path.isAbsolute(name)) {
     throw new Error(`${label}: must not be an absolute path`)
   }
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)) {
+    // Windows reserved device names resolve to the device, not a file.
+    throw new Error(`${label}: reserved device name`)
+  }
+  if (/[. ]$/.test(name)) {
+    // Trailing dot/space is silently stripped by Windows → name mismatch.
+    throw new Error(`${label}: must not end with a dot or space`)
+  }
 }
 
 // Check whether `candidate` resolves to a location inside `parent`.

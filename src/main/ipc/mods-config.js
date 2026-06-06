@@ -103,6 +103,7 @@ export function registerModsConfigIpc() {
   })
 
   ipcMain.handle('mods:read-config', (_, modFilename, relativePath) => {
+    assertSafeSegment('modFilename', modFilename)
     const gamePath = configStore.get('gamePath')
     if (!gamePath) throw new Error('Game path not set')
 
@@ -116,6 +117,7 @@ export function registerModsConfigIpc() {
   })
 
   ipcMain.handle('mods:save-config', (_, modFilename, relativePath, content) => {
+    assertSafeSegment('modFilename', modFilename)
     const gamePath = configStore.get('gamePath')
     if (!gamePath) throw new Error('Game path not set')
 
@@ -124,7 +126,12 @@ export function registerModsConfigIpc() {
 
     const resolved = resolveModConfigPath(ue4ssModsPath, modFilename, relativePath)
 
-    fs.writeFileSync(resolved, content, 'utf-8')
+    // Atomic write: power loss / kill mid-write would otherwise leave the
+    // user's mod config truncated to whatever bytes had flushed. .tmp +
+    // rename keeps the previous content intact until the new file is fully on disk.
+    const tmpPath = resolved + '.tmp'
+    fs.writeFileSync(tmpPath, content, 'utf-8')
+    fs.renameSync(tmpPath, resolved)
     return true
   })
 
@@ -163,7 +170,11 @@ export function registerModsConfigIpc() {
 
     if (!fs.existsSync(resolved)) return { ok: false, reason: 'not-found', resolved }
 
-    if (action === 'reveal') {
+    // openPath uses the OS default association — refuse to "open" executable
+    // types (a malicious mod could ship a payload alongside a config whose
+    // jump-to-file button targets it). Reveal those in the folder instead.
+    const EXECUTABLE_EXTS = new Set(['.exe', '.bat', '.cmd', '.com', '.ps1', '.psm1', '.msi', '.lnk', '.scr', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.jar', '.cpl', '.reg', '.inf', '.sct', '.application'])
+    if (action === 'reveal' || EXECUTABLE_EXTS.has(path.extname(resolved).toLowerCase())) {
       shell.showItemInFolder(resolved)
     } else {
       const result = shell.openPath(resolved)

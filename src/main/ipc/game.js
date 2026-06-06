@@ -1,6 +1,6 @@
 import { ipcMain, shell } from 'electron'
 import fs from 'fs'
-import { detectGamePath, getPaksPath, getGameExe, getGameVersion, getGameVersionCached } from '../services/steam-detector.js'
+import { detectGamePath, getPaksPath, getGameVersion, getGameVersionCached, HUMANITZ_APP_ID } from '../services/steam-detector.js'
 import configStore from '../services/config-store.js'
 import { isGameRunning } from '../services/process-detector.js'
 import logger from '../services/logger.js'
@@ -73,15 +73,17 @@ function registerGameIpc(_mainWindow) {
   })
 
   ipcMain.handle('game:launch', async () => {
-    // Launch through Steam's URL protocol so Steam orchestrates Proton —
-    // applies the user's per-game launch options (WINEDLLOVERRIDES etc.),
-    // wires up the Wine prefix, and enables the Steam overlay. Tradeoff:
-    // requires Steam to be installed and signed in; no support for direct
-    // Proton invocation without Steam. Acceptable for HumanitZ since the
-    // game is Steam-only.
+    // Always launch through Steam's URL protocol so Steam orchestrates Proton —
+    // applies the user's per-game launch options (WINEDLLOVERRIDES etc.), wires
+    // up the Wine prefix, and enables the Steam overlay. HumanitZ ships no
+    // steam_appid.txt, so bypassing Steam leaves the Steam API uninitialised →
+    // multiplayer host bind failure (Could not bind local address). Unlike the
+    // Windows manager there is no direct-exe fallback: a Windows .exe can't be
+    // bare-spawned on Linux without a Wine wrapper, and a non-Steam copy has no
+    // Proton prefix to run through. Tradeoff: requires Steam installed + signed in.
     try {
-      await shell.openExternal('steam://rungameid/2358160')
-      logger.info('Game launch dispatched via steam://rungameid/2358160')
+      await shell.openExternal(`steam://rungameid/${HUMANITZ_APP_ID}`)
+      logger.info('Game launch dispatched via Steam')
       return true
     } catch (err) {
       logger.error('Game launch failed: ' + err.message)
@@ -89,11 +91,7 @@ function registerGameIpc(_mainWindow) {
     }
   })
 
-  ipcMain.handle('game:is-running', () => {
-    const gamePath = configStore.get('gamePath')
-    const exePath = gamePath ? getGameExe(gamePath) : null
-    return isGameRunning(exePath)
-  })
+  ipcMain.handle('game:is-running', () => isGameRunning())
 }
 
 export { registerGameIpc }

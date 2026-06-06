@@ -10,6 +10,7 @@ import logger from './logger.js'
 const REPO = 'uuuu790/HZMM'
 const REQUEST_TIMEOUT_MS = 10000
 const ALLOWED_DOWNLOAD_HOSTS = ['github.com', 'objects.githubusercontent.com']
+const ALLOWED_API_HOSTS = ['api.github.com', 'github.com', 'objects.githubusercontent.com', 'codeload.github.com']
 
 function githubGet(endpoint, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
@@ -31,6 +32,11 @@ function githubGet(endpoint, maxRedirects = 5) {
       // Bug 8 fix: handle HTTP redirects (3xx)
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         const redirectUrl = new URL(res.headers.location)
+        if (!ALLOWED_API_HOSTS.includes(redirectUrl.hostname)) {
+          res.resume()
+          reject(new Error(`Redirect to disallowed host: ${redirectUrl.hostname}`))
+          return
+        }
         const redirectOptions = {
           hostname: redirectUrl.hostname,
           path: redirectUrl.pathname + redirectUrl.search,
@@ -70,6 +76,11 @@ function handleResponse(res, resolve, reject, maxRedirects) {
       return
     }
     const redirectUrl = new URL(res.headers.location)
+    if (!ALLOWED_API_HOSTS.includes(redirectUrl.hostname)) {
+      res.resume()
+      reject(new Error(`Redirect to disallowed host: ${redirectUrl.hostname}`))
+      return
+    }
     const redirectOptions = {
       hostname: redirectUrl.hostname,
       path: redirectUrl.pathname + redirectUrl.search,
@@ -188,19 +199,21 @@ async function downloadUpdate(url, expectedHash, onProgress) {
   if (fs.existsSync(destPath)) fs.unlinkSync(destPath)
 
   logger.info(`Downloading update from: ${url}`)
-  await downloadFile(url, destPath, onProgress)
+  await downloadFile(url, destPath, onProgress, ALLOWED_DOWNLOAD_HOSTS)
 
-  // Verify SHA256 if expected hash is provided
-  if (expectedHash) {
-    const actualHash = await computeFileHash(destPath)
-    if (actualHash !== expectedHash.toLowerCase()) {
-      fs.unlinkSync(destPath)
-      throw new Error(`Update integrity check failed (expected ${expectedHash.slice(0, 16)}..., got ${actualHash.slice(0, 16)}...)`)
-    }
-    logger.info(`Update integrity verified: SHA256 ${actualHash.slice(0, 16)}...`)
-  } else {
-    logger.warn('No SHA256 hash in release notes — skipping integrity check')
+  // SHA256 is mandatory — silently skipping it (the previous fallback) meant
+  // a tampered release body without the hash line bypassed integrity entirely.
+  // Every release notes body must include a `SHA256: <64hex>` line.
+  if (!expectedHash) {
+    try { fs.unlinkSync(destPath) } catch { /* best-effort */ }
+    throw new Error('Update integrity check failed: release notes missing SHA256 hash')
   }
+  const actualHash = await computeFileHash(destPath)
+  if (actualHash !== expectedHash.toLowerCase()) {
+    fs.unlinkSync(destPath)
+    throw new Error(`Update integrity check failed (expected ${expectedHash.slice(0, 16)}..., got ${actualHash.slice(0, 16)}...)`)
+  }
+  logger.info(`Update integrity verified: SHA256 ${actualHash.slice(0, 16)}...`)
 
   logger.info(`Update downloaded to: ${destPath}`)
   return destPath

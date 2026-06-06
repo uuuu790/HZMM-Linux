@@ -140,34 +140,49 @@ function registerNexusIpc(mainWindow) {
 
   // V1 (kept) — install a specific file. Uses the V1 download_link endpoint,
   // which is the Premium-only bit that V2 doesn't expose.
+  // `installInFlight` keys (modId:fileId) reject a second invoke for the same
+  // file — without it two concurrent downloads write the same tempPath and
+  // corrupt each other's zip stream.
+  const installInFlight = new Set()
   ipcMain.handle('nexus:install-file', async (_, modId, fileId) => {
     if (!Number.isInteger(modId) || modId <= 0) throw new Error('Invalid mod id')
     if (!Number.isInteger(fileId) || fileId <= 0) throw new Error('Invalid file id')
-    const apiKey = configStore.get('nexusApiKey')
-    if (!apiKey) throw new Error('NEXUS_API_KEY_REQUIRED')
-
-    const resolved = await resolveNexusDownloadUrl({ game: GAME_DOMAIN, modId, fileId }, apiKey)
-    const urlObj = new URL(resolved.url)
-    let filename = path.basename(urlObj.pathname)
-    if (!filename || !filename.match(/\.(zip|rar|pak)$/i)) {
-      filename = `${resolved.name || `nexus_mod_${modId}_${fileId}`}.zip`
-    }
-    const tempPath = path.join(configStore.getConfigDir(), 'temp', filename)
-    fs.mkdirSync(path.dirname(tempPath), { recursive: true })
-
+    const lockKey = `${modId}:${fileId}`
+    if (installInFlight.has(lockKey)) throw new Error('Install already in progress for this file')
+    installInFlight.add(lockKey)
     try {
-      await downloadFile(resolved.url, tempPath, (progress) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('mods:download-progress', progress)
-        }
-      })
-      const result = await installMods([tempPath], mainWindow)
-      try { fs.unlinkSync(tempPath) } catch { /* temp file already gone */ }
-      recordInstall(modId, fileId, flattenLandedMods(result))
-      return result
-    } catch (err) {
-      try { fs.unlinkSync(tempPath) } catch { /* temp file already gone */ }
-      throw err
+      const apiKey = configStore.get('nexusApiKey')
+      if (!apiKey) throw new Error('NEXUS_API_KEY_REQUIRED')
+
+      const resolved = await resolveNexusDownloadUrl({ game: GAME_DOMAIN, modId, fileId }, apiKey)
+      const urlObj = new URL(resolved.url)
+      let filename = path.basename(urlObj.pathname)
+      if (!filename || !filename.match(/\.(zip|rar|pak)$/i)) {
+        // Nexus is a trusted source but defense-in-depth: basename + strip
+        // anything outside `[A-Za-z0-9._-]` so a surprise upstream name can't
+        // escape the temp dir via traversal or shell metachars.
+        const safe = path.basename(resolved.name || '').replace(/[^\w.-]/g, '_')
+        filename = `${safe || `nexus_mod_${modId}_${fileId}`}.zip`
+      }
+      const tempPath = path.join(configStore.getConfigDir(), 'temp', filename)
+      fs.mkdirSync(path.dirname(tempPath), { recursive: true })
+
+      try {
+        await downloadFile(resolved.url, tempPath, (progress) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('mods:download-progress', progress)
+          }
+        })
+        const result = await installMods([tempPath], mainWindow)
+        try { fs.unlinkSync(tempPath) } catch { /* temp file already gone */ }
+        recordInstall(modId, fileId, flattenLandedMods(result))
+        return result
+      } catch (err) {
+        try { fs.unlinkSync(tempPath) } catch { /* temp file already gone */ }
+        throw err
+      }
+    } finally {
+      installInFlight.delete(lockKey)
     }
   })
 

@@ -54,6 +54,8 @@ function parseNexusUrl(url) {
   return { game, modId, fileId: fileId ? parseInt(fileId) : null }
 }
 
+const NEXUS_V1_TIMEOUT_MS = 10000
+
 async function nexusApiRequest(endpoint, apiKey) {
   const https = await import('https')
   return new Promise((resolve, reject) => {
@@ -76,6 +78,12 @@ async function nexusApiRequest(endpoint, apiKey) {
       res.on('error', reject)
     })
     req.on('error', reject)
+    // Without this the V1 endpoint can hang the install flow forever when
+    // the API stalls after TCP handshake.
+    req.setTimeout(NEXUS_V1_TIMEOUT_MS, () => {
+      req.destroy()
+      reject(new Error('Nexus V1 API request timed out'))
+    })
   })
 }
 

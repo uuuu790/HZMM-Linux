@@ -21,6 +21,11 @@ export const CACHE_TTL = {
   search: 2 * 60 * 1000,
 }
 
+// Bound entries so a long session of rapid search typing (each keystroke is
+// a new key) can't grow the Map unbounded. Map preserves insertion order so
+// deleting the head approximates LRU well enough for this dedupe cache.
+export const MAX_ENTRIES = 200
+
 const cache = new Map()
 
 function cacheKey(key) { return `${CACHE_VERSION}:${key}` }
@@ -34,7 +39,12 @@ export function cacheGet(key) {
 }
 
 export function cacheSet(key, data, ttl) {
-  cache.set(cacheKey(key), { data, expires: Date.now() + ttl })
+  const k = cacheKey(key)
+  if (!cache.has(k) && cache.size >= MAX_ENTRIES) {
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
+  }
+  cache.set(k, { data, expires: Date.now() + ttl })
 }
 
 export function cacheClear(prefix) {

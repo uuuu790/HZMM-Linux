@@ -49,7 +49,12 @@ let cache = null
 
 function save() {
   ensureDir()
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cache, null, 2), 'utf-8')
+  // Atomic write: tmp + rename. A power-cycle / hard-kill mid-write
+  // would otherwise leave a truncated config.json, and load()'s silent
+  // JSON.parse catch resets cache to {} — wiping the user's settings.
+  const tmpPath = CONFIG_FILE + '.tmp'
+  fs.writeFileSync(tmpPath, JSON.stringify(cache, null, 2), 'utf-8')
+  fs.renameSync(tmpPath, CONFIG_FILE)
 }
 
 function get(key, defaultValue = null) {

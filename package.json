@@ -13,24 +13,26 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test --config=playwright.config.mjs",
+    "audit": "node scripts/audit.mjs",
+    "check": "npm run audit && npm run lint && npm test",
     "fix:dev-icon": "node scripts/fix-dev-icon.js"
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
-    "dompurify": "^3.4.0",
+    "dompurify": "^3.4.3",
     "electron-window-state": "^5.0.3",
-    "marked": "^18.0.0",
+    "marked": "^18.0.3",
     "node-stream-zip": "^1.15.0",
     "node-unrar-js": "^2.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@playwright/test": "^1.59.1",
-    "@tailwindcss/vite": "^4.0.0",
+    "@playwright/test": "^1.60.0",
+    "@tailwindcss/vite": "^4.3.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^33.2.1",
+    "electron": "^42.1.0",
     "electron-builder": "^26.8.1",
-    "electron-vite": "^2.3.0",
+    "electron-vite": "^5.0.0",
     "eslint": "^9.39.4",
     "eslint-plugin-n": "^17.24.0",
     "eslint-plugin-react": "^7.37.5",
@@ -42,7 +44,7 @@
     "rcedit": "^5.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwindcss": "^4.0.0",
-    "vitest": "^4.1.4"
+    "tailwindcss": "^4.3.0",
+    "vitest": "^4.1.6"
   }
 }

@@ -1,0 +1,16 @@
+appId: com.hzmm.mod-manager
+productName: HZMM Manager
+directories:
+  buildResources: resources
+  output: dist
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: resources/icon.png
+  category: Game
+  artifactName: "${productName}-${version}.${ext}"
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
+forceCodeSigning: false

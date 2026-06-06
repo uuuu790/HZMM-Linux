@@ -1,0 +1,136 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Mod README markdown styles */
+.mod-readme { font-size: 14px; line-height: 1.7; color: #334155; }
+.dark .mod-readme { color: #cbd5e1; }
+.mod-readme h1 { font-size: 1.25em; font-weight: 900; margin: 1em 0 0.5em; color: #0f172a; }
+.mod-readme h2 { font-size: 1.1em; font-weight: 800; margin: 1em 0 0.4em; color: #1e293b; }
+.mod-readme h3 { font-size: 1em; font-weight: 700; margin: 0.8em 0 0.3em; color: #334155; }
+.dark .mod-readme h1 { color: #f1f5f9; }
+.dark .mod-readme h2 { color: #e2e8f0; }
+.dark .mod-readme h3 { color: #cbd5e1; }
+.mod-readme p { margin: 0.4em 0; }
+.mod-readme ul, .mod-readme ol { margin: 0.4em 0; padding-left: 1.5em; }
+.mod-readme li { margin: 0.2em 0; }
+.mod-readme hr { border: none; border-top: 1px solid #e2e8f0; margin: 0.8em 0; }
+.dark .mod-readme hr { border-color: #334155; }
+.mod-readme a { color: #2563eb; text-decoration: underline; }
+.dark .mod-readme a { color: #60a5fa; }
+.mod-readme strong { font-weight: 700; color: #0f172a; }
+.dark .mod-readme strong { color: #f1f5f9; }
+/* Inline color (e.g. <span style="color:red">) should propagate into nested strong/em */
+.mod-readme [style*="color"] strong,
+.mod-readme [style*="color"] em,
+.dark .mod-readme [style*="color"] strong,
+.dark .mod-readme [style*="color"] em { color: inherit; }
+.mod-readme pre { background: #f1f5f9; border-radius: 0.75rem; padding: 0.75em 1em; overflow-x: auto; margin: 0.5em 0; font-size: 0.85em; color: #1e293b; }
+.dark .mod-readme pre { background: #1e293b; color: #e2e8f0; }
+.mod-readme pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+.mod-readme code { font-family: ui-monospace, monospace; font-size: 0.9em; background: #f1f5f9; padding: 0.15em 0.4em; border-radius: 0.3em; color: #1e293b; }
+.dark .mod-readme code { background: #1e293b; color: #e2e8f0; }
+.mod-readme table { width: 100%; border-collapse: collapse; margin: 0.5em 0; font-size: 0.9em; }
+.mod-readme th { text-align: left; font-weight: 700; padding: 0.4em 0.6em; border-bottom: 2px solid #e2e8f0; color: #0f172a; }
+.dark .mod-readme th { border-color: #334155; color: #f1f5f9; }
+.mod-readme td { padding: 0.35em 0.6em; border-bottom: 1px solid #f1f5f9; }
+.dark .mod-readme td { border-color: #1e293b; }
+.mod-readme blockquote { border-left: 3px solid #e2e8f0; padding-left: 1em; margin: 0.5em 0; color: #64748b; }
+.dark .mod-readme blockquote { border-color: #334155; color: #94a3b8; }
+/* Constrain wide screenshots so they fit the modal instead of being clipped by overflow-hidden */
+.mod-readme img { max-width: 100%; height: auto; border-radius: 0.5rem; margin: 0.5em 0; }
+
+/* ============================================================
+   .nexus-description — styling for rendered Nexus Mods descriptions.
+   Nexus lets authors write a mix of BBCode and raw HTML, so this
+   class has to handle arbitrary layout (centered divs, h1-h6,
+   tables, font color/size, etc.). We aim for visual parity with
+   nexusmods.com rather than the HZMM mod-readme look.
+   ============================================================ */
+.nexus-description { font-size: 14px; line-height: 1.5; color: #334155; word-wrap: break-word; overflow-wrap: break-word; }
+.dark .nexus-description { color: #cbd5e1; }
+
+.nexus-description h1 { font-size: 1.55em; font-weight: 900; margin: 0.7em 0 0.25em; color: #0f172a; line-height: 1.2; }
+.nexus-description h2 { font-size: 1.3em; font-weight: 800; margin: 0.65em 0 0.22em; color: #1e293b; line-height: 1.25; }
+.nexus-description h3 { font-size: 1.1em; font-weight: 700; margin: 0.55em 0 0.2em; color: #334155; line-height: 1.3; }
+.nexus-description h4 { font-size: 1.02em; font-weight: 700; margin: 0.5em 0 0.15em; color: #334155; }
+.nexus-description h5 { font-size: 0.92em; font-weight: 700; margin: 0.45em 0 0.15em; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; }
+.nexus-description h6 { font-size: 0.82em; font-weight: 700; margin: 0.45em 0 0.15em; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+.nexus-description > *:first-child { margin-top: 0; }
+.nexus-description > *:last-child { margin-bottom: 0; }
+.dark .nexus-description h1 { color: #f1f5f9; }
+.dark .nexus-description h2 { color: #e2e8f0; }
+.dark .nexus-description h3 { color: #cbd5e1; }
+.dark .nexus-description h4 { color: #cbd5e1; }
+.dark .nexus-description h5 { color: #94a3b8; }
+.dark .nexus-description h6 { color: #94a3b8; }
+
+.nexus-description p { margin: 0.4em 0; }
+.nexus-description center, .nexus-description [style*="text-align:center"], .nexus-description [style*="text-align: center"] { text-align: center; }
+.nexus-description [style*="text-align:right"], .nexus-description [style*="text-align: right"] { text-align: right; }
+.nexus-description ul, .nexus-description ol { margin: 0.4em 0; padding-left: 1.75em; }
+.nexus-description li { margin: 0.15em 0; }
+.nexus-description li::marker { color: #94a3b8; }
+.dark .nexus-description li::marker { color: #64748b; }
+
+.nexus-description hr { border: none; border-top: 1px solid #e2e8f0; margin: 0.8em 0; }
+.dark .nexus-description hr { border-color: #334155; }
+
+.nexus-description a { color: #3b82f6; text-decoration: none; border-bottom: 1px solid rgba(59, 130, 246, 0.4); transition: border-color 0.2s ease; }
+.nexus-description a:hover { border-bottom-color: #3b82f6; }
+.dark .nexus-description a { color: #60a5fa; border-bottom-color: rgba(96, 165, 250, 0.4); }
+.dark .nexus-description a:hover { border-bottom-color: #60a5fa; }
+
+.nexus-description strong, .nexus-description b { font-weight: 700; color: #0f172a; }
+.dark .nexus-description strong, .dark .nexus-description b { color: #f1f5f9; }
+/* Inline color (e.g. <font color="red">, <span style="color">) should
+   propagate into nested strong/em instead of being overridden. */
+.nexus-description [style*="color"] strong,
+.nexus-description [style*="color"] em,
+.nexus-description font[color] strong,
+.nexus-description font[color] em,
+.dark .nexus-description [style*="color"] strong,
+.dark .nexus-description [style*="color"] em { color: inherit; }
+
+.nexus-description em, .nexus-description i { font-style: italic; }
+.nexus-description u { text-decoration: underline; }
+.nexus-description del, .nexus-description s { text-decoration: line-through; color: #94a3b8; }
+
+.nexus-description pre { background: #f1f5f9; border-radius: 0.75rem; padding: 0.75em 1em; overflow-x: auto; margin: 0.6em 0; font-size: 0.85em; color: #1e293b; }
+.dark .nexus-description pre { background: #1e293b; color: #e2e8f0; }
+.nexus-description pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+.nexus-description code { font-family: ui-monospace, monospace; font-size: 0.9em; background: #f1f5f9; padding: 0.15em 0.4em; border-radius: 0.3em; color: #1e293b; }
+.dark .nexus-description code { background: #1e293b; color: #e2e8f0; }
+
+.nexus-description table { border-collapse: collapse; margin: 0.6em auto; font-size: 0.9em; background: rgba(255, 255, 255, 0.5); border-radius: 0.5rem; overflow: hidden; }
+.dark .nexus-description table { background: rgba(30, 41, 59, 0.3); }
+.nexus-description th { text-align: left; font-weight: 700; padding: 0.5em 0.8em; background: rgba(100, 116, 139, 0.08); color: #0f172a; }
+.dark .nexus-description th { background: rgba(148, 163, 184, 0.1); color: #f1f5f9; }
+.nexus-description td { padding: 0.4em 0.8em; border-top: 1px solid rgba(148, 163, 184, 0.15); }
+.dark .nexus-description td { border-top-color: rgba(100, 116, 139, 0.2); }
+
+.nexus-description blockquote { border-left: 3px solid #e2e8f0; padding: 0.3em 0 0.3em 0.9em; margin: 0.4em 0; color: #64748b; background: rgba(100, 116, 139, 0.04); border-radius: 0 0.5rem 0.5rem 0; }
+.dark .nexus-description blockquote { border-color: #475569; color: #94a3b8; background: rgba(148, 163, 184, 0.05); }
+
+/* Images: centered + shadow like Nexus's site. Shrink huge uploads to fit. */
+.nexus-description img { max-width: 100%; height: auto; border-radius: 0.5rem; margin: 0.5em auto; display: block; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); }
+.dark .nexus-description img { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
+
+.nexus-description details { margin: 0.4em 0; padding: 0.4em 0.9em; border-radius: 0.5rem; background: rgba(100, 116, 139, 0.05); border: 1px solid rgba(148, 163, 184, 0.15); }
+.dark .nexus-description details { background: rgba(148, 163, 184, 0.05); border-color: rgba(100, 116, 139, 0.2); }
+.nexus-description summary { cursor: pointer; font-weight: 600; color: #334155; user-select: none; }
+.dark .nexus-description summary { color: #cbd5e1; }
+.nexus-description details[open] summary { margin-bottom: 0.4em; }
+
+/* Ensure <font size> still works — legacy Nexus content uses it. */
+.nexus-description font[size="1"] { font-size: 0.75em; }
+.nexus-description font[size="2"] { font-size: 0.875em; }
+.nexus-description font[size="3"] { font-size: 1em; }
+.nexus-description font[size="4"] { font-size: 1.125em; }
+.nexus-description font[size="5"] { font-size: 1.35em; }
+.nexus-description font[size="6"] { font-size: 1.6em; }
+.nexus-description font[size="7"] { font-size: 1.9em; }

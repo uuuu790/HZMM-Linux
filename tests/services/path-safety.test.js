@@ -77,12 +77,12 @@ describe('resolveWithin', () => {
     // This is the critical mods.js bug — renderer-supplied modFilename
     // must not be able to escape the parent directory.
     expect(() =>
-      resolveWithin(ROOT, '..\\..\\..\\Windows\\System32', 'config.ini')
+      resolveWithin(ROOT, IS_WINDOWS ? '..\\..\\..\\Windows\\System32' : '../../../etc', 'config.ini')
     ).toThrow(/traversal/i)
   })
 
   it('throws when a later segment contains ..', () => {
-    expect(() => resolveWithin(ROOT, 'mod-a', '..\\..\\etc\\passwd')).toThrow(/traversal/i)
+    expect(() => resolveWithin(ROOT, 'mod-a', IS_WINDOWS ? '..\\..\\etc\\passwd' : '../../etc/passwd')).toThrow(/traversal/i)
   })
 
   it('neutralizes absolute path segments — they must never replace the parent', () => {

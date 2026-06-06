@@ -35,9 +35,9 @@ describe('resolveModConfigPath — attack vectors (must all throw)', () => {
     ).toThrow(/traversal|invalid/i)
   })
 
-  it('blocks modFilename with backslash escape on Windows', () => {
+  it('blocks modFilename that escapes the mods root via path traversal', () => {
     expect(() =>
-      resolveModConfigPath(MODS_ROOT, '..\\..\\..\\Windows\\System32', 'hosts')
+      resolveModConfigPath(MODS_ROOT, IS_WINDOWS ? '..\\..\\..\\Windows\\System32' : '../../../etc', 'hosts')
     ).toThrow(/traversal|invalid/i)
   })
 

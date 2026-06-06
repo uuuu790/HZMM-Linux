@@ -27,7 +27,7 @@ describe('archive.isSafePath — zip slip defense', () => {
   const maliciousEntries = [
     '../escape.txt',
     '../../../../../../etc/passwd',
-    '..\\..\\..\\Windows\\System32\\drivers\\etc\\hosts',
+    IS_WINDOWS ? '..\\..\\..\\Windows\\System32\\drivers\\etc\\hosts' : '../../../../etc/hosts',
     'foo/../../../etc/shadow',
     'normal/../../../escape.txt',
     IS_WINDOWS ? 'C:\\Windows\\System32\\evil.dll' : '/etc/evil',

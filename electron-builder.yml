@@ -9,6 +9,7 @@ linux:
     - deb
   icon: resources/icon.png
   category: Game
+  maintainer: uuuu790 <uuuu790@users.noreply.github.com>
   artifactName: "${productName}-${version}.${ext}"
 extraResources:
   - from: resources/icon.png

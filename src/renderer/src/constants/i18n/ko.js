@@ -99,6 +99,7 @@ export default {
   "downloading": "다운로드 중...",
   "installUpdate": "설치 후 재시작",
   "updateReady": "업데이트 준비 완료",
+  "updateDownloadManual": "다운로드",
   "changelog": "변경 사항",
   "conflictScan": "충돌 검사",
   "conflictScanning": "검사 중...",

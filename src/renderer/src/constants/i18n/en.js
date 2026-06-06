@@ -99,6 +99,7 @@ export default {
   "downloading": "Downloading...",
   "installUpdate": "Install & Restart",
   "updateReady": "Update Ready",
+  "updateDownloadManual": "Download",
   "changelog": "Changelog",
   "conflictScan": "Conflict Scan",
   "conflictScanning": "Scanning...",

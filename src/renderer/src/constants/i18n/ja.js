@@ -99,6 +99,7 @@ export default {
   "downloading": "ダウンロード中...",
   "installUpdate": "インストールして再起動",
   "updateReady": "更新の準備完了",
+  "updateDownloadManual": "ダウンロード",
   "changelog": "更新履歴",
   "conflictScan": "競合チェック",
   "conflictScanning": "スキャン中...",

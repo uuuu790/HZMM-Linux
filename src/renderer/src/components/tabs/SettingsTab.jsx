@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import GlassCard from '../common/GlassCard';
 import { THEME_PRESETS } from '../../constants/themes';
-import { Settings, Sun, Moon, Sliders, Folder, RefreshCw, AlertTriangle, FileText, Info, DownloadCloud, CheckCircle, Zap, Save, RotateCcw, Trash2, KeyRound, Map, Terminal, ClipboardCopy } from 'lucide-react';
+import { Settings, Sun, Moon, Sliders, Folder, RefreshCw, AlertTriangle, FileText, Info, DownloadCloud, CheckCircle, Save, RotateCcw, Trash2, KeyRound, Map, Terminal, ClipboardCopy } from 'lucide-react';
 import { formatBytes } from '../common/utils';
 
 const PROTON_LAUNCH_OPTION = 'WINEDLLOVERRIDES="dwmapi=n,b" %command%';
@@ -455,7 +455,7 @@ function SettingsTab({
                 )}
                 {updateState === 'ready' && (
                   <button onClick={handleInstallUpdate} className="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-full bg-emerald-500 hover:bg-emerald-600 text-white transition-all duration-300 active:scale-95 shadow-sm hover:shadow-md">
-                    <Zap className="w-3.5 h-3.5" /> {t.installUpdate}
+                    <DownloadCloud className="w-3.5 h-3.5" /> {t.updateDownloadManual}
                   </button>
                 )}
               </div>

@@ -99,6 +99,7 @@ export default {
   "downloading": "下載中...",
   "installUpdate": "安裝並重啟",
   "updateReady": "更新已就緒",
+  "updateDownloadManual": "前往下載",
   "changelog": "更新日誌",
   "conflictScan": "衝突偵測",
   "conflictScanning": "掃描中...",

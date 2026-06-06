@@ -99,6 +99,7 @@ export default {
   "downloading": "Herunterladen...",
   "installUpdate": "Installieren & Neustarten",
   "updateReady": "Update bereit",
+  "updateDownloadManual": "Herunterladen",
   "changelog": "Änderungsprotokoll",
   "conflictScan": "Konfliktprüfung",
   "conflictScanning": "Scannen...",

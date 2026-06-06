@@ -99,6 +99,7 @@ export default {
   "downloading": "Загрузка...",
   "installUpdate": "Установить и перезапустить",
   "updateReady": "Обновление готово",
+  "updateDownloadManual": "Скачать",
   "changelog": "Список изменений",
   "conflictScan": "Проверка конфликтов",
   "conflictScanning": "Сканирование...",

@@ -33,8 +33,10 @@ export default {
   "importMod": "파일 선택",
   "uninstall": "제거",
   "toastInstalled": "모드가 설치되었습니다",
+  "toastInstallFailed": "설치 실패",
   "toastUninstalled": "모드가 제거되었습니다",
   "toastEnabled": "모드가 활성화되었습니다",
+  "toastBatchFailed": "일부 모드를 처리하지 못했습니다",
   "toastDisabled": "모드가 비활성화되었습니다",
   "toastProfileApplied": "프로필이 적용되었습니다",
   "toastProfileCreated": "프로필이 생성되었습니다",
@@ -233,5 +235,9 @@ export default {
   "themeToxic": "독안개",
   "themeFrost": "서리",
   "themeViolet": "보라",
-  "themeGold": "황금"
+  "themeGold": "황금",
+  "protonLaunchTitle": "Proton 실행 옵션",
+  "protonLaunchDesc": "Linux/Proton에서 UE4SS를 로드하려면 필요합니다. Steam 게임 속성 → 실행 옵션에 붙여넣으세요.",
+  "protonLaunchCopy": "복사",
+  "protonLaunchCopied": "복사됨"
 };

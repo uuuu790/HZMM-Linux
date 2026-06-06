@@ -33,8 +33,10 @@ export default {
   "importMod": "ファイル選択",
   "uninstall": "アンインストール",
   "toastInstalled": "Modのインストール完了",
+  "toastInstallFailed": "インストールに失敗しました",
   "toastUninstalled": "Modをアンインストールしました",
   "toastEnabled": "Modを有効にしました",
+  "toastBatchFailed": "一部のModを処理できませんでした",
   "toastDisabled": "Modを無効にしました",
   "toastProfileApplied": "プロファイルを適用しました",
   "toastProfileCreated": "プロファイルを作成しました",
@@ -233,5 +235,9 @@ export default {
   "themeToxic": "毒霧",
   "themeFrost": "霜氷",
   "themeViolet": "幻紫",
-  "themeGold": "黄金"
+  "themeGold": "黄金",
+  "protonLaunchTitle": "Proton 起動オプション",
+  "protonLaunchDesc": "Linux/Proton で UE4SS を読み込むために必要です。Steam のゲームプロパティ → 起動オプションに貼り付けてください。",
+  "protonLaunchCopy": "コピー",
+  "protonLaunchCopied": "コピーしました"
 };

@@ -33,8 +33,10 @@ export default {
   "importMod": "Выбрать файлы",
   "uninstall": "Удалить",
   "toastInstalled": "Мод успешно установлен",
+  "toastInstallFailed": "Не удалось установить",
   "toastUninstalled": "Мод удалён",
   "toastEnabled": "Мод включён",
+  "toastBatchFailed": "Не удалось обработать некоторые моды",
   "toastDisabled": "Мод отключён",
   "toastProfileApplied": "Профиль применён",
   "toastProfileCreated": "Профиль создан",
@@ -233,5 +235,9 @@ export default {
   "themeToxic": "Токсичный",
   "themeFrost": "Мороз",
   "themeViolet": "Фиолет",
-  "themeGold": "Золото"
+  "themeGold": "Золото",
+  "protonLaunchTitle": "Параметр запуска Proton",
+  "protonLaunchDesc": "Необходимо для загрузки UE4SS в Linux/Proton. Вставьте это в свойства игры Steam → Параметры запуска.",
+  "protonLaunchCopy": "Копировать",
+  "protonLaunchCopied": "Скопировано"
 };

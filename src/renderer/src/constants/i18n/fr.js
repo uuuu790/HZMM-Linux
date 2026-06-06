@@ -33,8 +33,10 @@ export default {
   "importMod": "Parcourir",
   "uninstall": "Désinstaller",
   "toastInstalled": "Mod installé avec succès",
+  "toastInstallFailed": "Échec de l'installation",
   "toastUninstalled": "Mod désinstallé",
   "toastEnabled": "Mod activé",
+  "toastBatchFailed": "Certains mods n'ont pas pu être traités",
   "toastDisabled": "Mod désactivé",
   "toastProfileApplied": "Profil appliqué",
   "toastProfileCreated": "Profil créé",
@@ -233,5 +235,9 @@ export default {
   "themeToxic": "Toxique",
   "themeFrost": "Givre",
   "themeViolet": "Violet",
-  "themeGold": "Or"
+  "themeGold": "Or",
+  "protonLaunchTitle": "Option de lancement Proton",
+  "protonLaunchDesc": "Requis pour charger UE4SS sous Linux/Proton. Collez ceci dans les propriétés du jeu Steam → Options de lancement.",
+  "protonLaunchCopy": "Copier",
+  "protonLaunchCopied": "Copié"
 };

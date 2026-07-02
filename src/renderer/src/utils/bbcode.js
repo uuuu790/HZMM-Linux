@@ -45,6 +45,25 @@ function bbSizeToEm(n) {
   return (0.5 + clamped * 0.15).toFixed(2) + 'em'
 }
 
+// Validate a [color=…] token against a strict CSS-color allowlist before it
+// reaches the style attribute. DOMPurify keeps inert junk like
+// `a)expression(alert(1))` (harmless on Chromium but ugly), so we reject
+// anything that isn't a hex value, a functional rgb()/hsl() form, a number/
+// percentage, or a plain color keyword.
+function isSafeCssColor(value) {
+  const c = String(value).trim()
+  if (!c) return false
+  // #rgb / #rgba / #rrggbb / #rrggbbaa
+  if (/^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(c)) return true
+  // rgb()/rgba()/hsl()/hsla() — digits, dots, %, commas, spaces and slashes only
+  if (/^(?:rgb|hsl)a?\(\s*[0-9.,%\s/]+\)$/i.test(c)) return true
+  // Bare number or percentage (e.g. legacy "50%")
+  if (/^[0-9]+%?$/.test(c)) return true
+  // Plain CSS color keyword (red, rebeccapurple, transparent, …)
+  if (/^[a-z]+$/i.test(c)) return true
+  return false
+}
+
 // Simple paired BBCode → HTML tag replacements.
 const PAIRED_RULES = [
   [/\[b\]([\s\S]*?)\[\/b\]/gi, '<strong>$1</strong>'],
@@ -55,6 +74,9 @@ const PAIRED_RULES = [
   [/\[right\]([\s\S]*?)\[\/right\]/gi, '<div style="text-align:right">$1</div>'],
   [/\[left\]([\s\S]*?)\[\/left\]/gi, '<div style="text-align:left">$1</div>'],
   [/\[heading\]([\s\S]*?)\[\/heading\]/gi, '<h3>$1</h3>'],
+  [/\[h1\]([\s\S]*?)\[\/h1\]/gi, '<h2>$1</h2>'],
+  [/\[h2\]([\s\S]*?)\[\/h2\]/gi, '<h3>$1</h3>'],
+  [/\[h3\]([\s\S]*?)\[\/h3\]/gi, '<h4>$1</h4>'],
   [/\[quote(?:=[^\]]*)?\]([\s\S]*?)\[\/quote\]/gi, '<blockquote>$1</blockquote>'],
   [/\[code\]([\s\S]*?)\[\/code\]/gi, '<pre><code>$1</code></pre>'],
   [/\[pre\]([\s\S]*?)\[\/pre\]/gi, '<pre>$1</pre>'],
@@ -102,7 +124,9 @@ function bbcodeToRawHtml(input) {
     for (const [re, repl] of PAIRED_RULES) s = s.replace(re, repl)
 
     s = s.replace(/\[color=([#a-z0-9()\s,%.-]+)\]([\s\S]*?)\[\/color\]/gi,
-      (_m, c, text) => `<span style="color:${c.trim()}">${text}</span>`)
+      (_m, c, text) => isSafeCssColor(c)
+        ? `<span style="color:${c.trim()}">${text}</span>`
+        : text)
 
     s = s.replace(/\[size=(\d+)\]([\s\S]*?)\[\/size\]/gi,
       (_m, n, text) => `<span style="font-size:${bbSizeToEm(n)}">${text}</span>`)
@@ -119,6 +143,18 @@ function bbcodeToRawHtml(input) {
     s = s.replace(/\[email(?:=[^\]]*)?\]([\s\S]*?)\[\/email\]/gi,
       (_m, addr) => `<a href="mailto:${addr}">${addr}</a>`)
 
+    // [img=URL]...[/img] and standalone [img=URL] — the attribute form (like
+    // [url=..]) that Nexus authors commonly use. The bare-form rule below can't
+    // match it (it requires whitespace after `img`, not `=`).
+    s = s.replace(/\[img=([^\]]+)\][\s\S]*?\[\/img\]/gi, (_m, url) => {
+      const u = safeUrl(url)
+      return u === '#' ? '' : `<img src="${u}" alt="" loading="lazy">`
+    })
+    s = s.replace(/\[img=([^\]]+)\]/gi, (_m, url) => {
+      const u = safeUrl(url)
+      return u === '#' ? '' : `<img src="${u}" alt="" loading="lazy">`
+    })
+
     s = s.replace(/\[img(?:\s+[^\]]*)?\]([\s\S]*?)\[\/img\]/gi, (_m, url) => {
       const u = safeUrl(url)
       if (u === '#') return ''
@@ -133,6 +169,10 @@ function bbcodeToRawHtml(input) {
       return `<a href="${url}" target="_blank" rel="noopener noreferrer">▶ YouTube: ${url}</a>`
     })
 
+    // Strip redundant [/*] item closers. Some authors pair [*]item[/*]; once
+    // [*] delimits items the closer is noise — and it was leaking into output.
+    s = s.replace(/\[\/\*\]/gi, '')
+
     s = s.replace(/\[list=1\]([\s\S]*?)\[\/list\]/gi, (_m, body) => {
       const items = body.split(/\[\*\]/).map(x => x.trim()).filter(Boolean)
       return `<ol>${items.map(i => `<li>${i}</li>`).join('')}</ol>`
@@ -140,6 +180,15 @@ function bbcodeToRawHtml(input) {
     s = s.replace(/\[list\]([\s\S]*?)\[\/list\]/gi, (_m, body) => {
       const items = body.split(/\[\*\]/).map(x => x.trim()).filter(Boolean)
       return `<ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>`
+    })
+
+    // Bare [*] items the author wrote without a [list] wrapper. Grab a run of
+    // consecutive [*]-led segments (each segment runs to the next [*]) and wrap
+    // it in one <ul>. `[^[]|\[(?!\*\])` lets item text keep already-converted
+    // HTML and stray `[` that aren't list markers.
+    s = s.replace(/\[\*\](?:[^[]|\[(?!\*\]))*(?:\[\*\](?:[^[]|\[(?!\*\]))*)*/g, (run) => {
+      const items = run.split(/\[\*\]/).map(x => x.trim()).filter(Boolean)
+      return items.length ? `<ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>` : run
     })
 
     if (s === before) break

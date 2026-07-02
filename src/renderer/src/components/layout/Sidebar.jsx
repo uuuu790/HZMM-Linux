@@ -1,4 +1,4 @@
-import { CheckCircle, Settings, Play, LayoutDashboard, Layers, Save, Compass, ArrowUpCircle } from 'lucide-react';
+import { CheckCircle, Settings, Play, LayoutDashboard, Layers, Save, Compass, ArrowUpCircle, Hammer } from 'lucide-react';
 
 const YTSpinner = ({ className = '' }) => (
   <svg className={`yt-spinner ${className}`} viewBox="0 0 24 24" fill="none">
@@ -10,9 +10,15 @@ const YTSpinner = ({ className = '' }) => (
 export default function Sidebar({
   activeTab, setActiveTab, setActiveModuleId, appIcon, t,
   isGameRunning, launchState, gameVersion, handleLaunch, appVersion,
-  updateState, updateInfo,
+  updateState, updateInfo, modUpdateCount,
 }) {
   const hasUpdate = updateState === 'available' || updateState === 'downloading' || updateState === 'ready';
+  // Steam Workshop is a work-in-progress tab — HumanitZ has no official
+  // Workshop yet, so it only appears in dev builds for testing and is hidden
+  // in packaged builds. The glider divisor (--total-radio) tracks the live
+  // tab count so the indicator stays aligned whether the tab shows or not.
+  const showSteamWorkshop = import.meta.env.DEV;
+  const navTabCount = showSteamWorkshop ? 6 : 5;
   return (
     <aside className="w-20 lg:w-64 border-r border-slate-200/50 dark:border-white/5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl flex flex-col z-20 transition-colors duration-700 shadow-[4px_0_24px_rgba(0,0,0,0.02)] dark:shadow-[4px_0_24px_rgba(0,0,0,0.2)]">
       <div className="h-24 flex items-center justify-center lg:justify-start lg:px-8 border-b border-slate-200/50 dark:border-white/5 transition-colors duration-700 [-webkit-app-region:drag]">
@@ -23,7 +29,7 @@ export default function Sidebar({
       </div>
 
       <nav className="flex-1 py-8 px-4 [-webkit-app-region:no-drag]">
-        <div className="sidebar-nav">
+        <div className="sidebar-nav" style={{ '--total-radio': navTabCount }}>
           <input type="radio" name="sidebar-tab" id="tab-dashboard" checked={activeTab === 'dashboard'} onChange={() => { setActiveTab('dashboard'); setActiveModuleId(null); }} />
           <label htmlFor="tab-dashboard">
             <LayoutDashboard className="w-5 h-5 shrink-0 transition-transform duration-300" />
@@ -33,17 +39,34 @@ export default function Sidebar({
           <label htmlFor="tab-modules">
             <Layers className="w-5 h-5 shrink-0 transition-transform duration-300" />
             <span className="hidden lg:block font-medium tracking-wide">{t.modules}</span>
-          </label>
-          <input type="radio" name="sidebar-tab" id="tab-nexus" checked={activeTab === 'nexus'} onChange={() => { setActiveTab('nexus'); setActiveModuleId(null); }} />
-          <label htmlFor="tab-nexus">
-            <Compass className="w-5 h-5 shrink-0 transition-transform duration-300" />
-            <span className="hidden lg:block font-medium tracking-wide">{t.nexus}</span>
+            {modUpdateCount > 0 && (
+              <>
+                <span className="ml-auto hidden lg:flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-bold rounded-full bg-sky-500 text-white shadow-sm" title={t.updatesAvailable || 'Updates available'}>
+                  {modUpdateCount}
+                </span>
+                <span className="lg:hidden absolute top-2.5 right-4 w-2 h-2 rounded-full bg-sky-500 ring-2 ring-white dark:ring-slate-900" />
+              </>
+            )}
           </label>
           <input type="radio" name="sidebar-tab" id="tab-profiles" checked={activeTab === 'profiles'} onChange={() => { setActiveTab('profiles'); setActiveModuleId(null); }} />
           <label htmlFor="tab-profiles">
             <Save className="w-5 h-5 shrink-0 transition-transform duration-300" />
             <span className="hidden lg:block font-medium tracking-wide">{t.profiles}</span>
           </label>
+          <input type="radio" name="sidebar-tab" id="tab-nexus" checked={activeTab === 'nexus'} onChange={() => { setActiveTab('nexus'); setActiveModuleId(null); }} />
+          <label htmlFor="tab-nexus">
+            <Compass className="w-5 h-5 shrink-0 transition-transform duration-300" />
+            <span className="hidden lg:block font-medium tracking-wide">{t.nexus}</span>
+          </label>
+          {showSteamWorkshop && (
+            <>
+              <input type="radio" name="sidebar-tab" id="tab-steam-workshop" checked={activeTab === 'steamWorkshop'} onChange={() => { setActiveTab('steamWorkshop'); setActiveModuleId(null); }} />
+              <label htmlFor="tab-steam-workshop">
+                <Hammer className="w-5 h-5 shrink-0 transition-transform duration-300" />
+                <span className="hidden lg:block font-medium tracking-wide">{t.steamWorkshop}</span>
+              </label>
+            </>
+          )}
           <input type="radio" name="sidebar-tab" id="tab-settings" checked={activeTab === 'settings'} onChange={() => { setActiveTab('settings'); setActiveModuleId(null); }} />
           <label htmlFor="tab-settings">
             <Settings className="w-5 h-5 shrink-0 transition-transform duration-300" />

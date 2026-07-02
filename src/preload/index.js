@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, webUtils } = require('electron')
+const { contextBridge, ipcRenderer, webUtils, webFrame } = require('electron')
 
 contextBridge.exposeInMainWorld('api', {
   // --- 模組管理 ---
@@ -55,7 +55,12 @@ contextBridge.exposeInMainWorld('api', {
     getVersionCached: () => ipcRenderer.invoke('game:get-version-cached'),
     getVersion: () => ipcRenderer.invoke('game:get-version'),
     launch: () => ipcRenderer.invoke('game:launch'),
-    isRunning: () => ipcRenderer.invoke('game:is-running')
+    isRunning: () => ipcRenderer.invoke('game:is-running'),
+    onRunning: (cb) => {
+      const handler = (_, running) => cb(running)
+      ipcRenderer.on('game:running', handler)
+      return () => ipcRenderer.removeListener('game:running', handler)
+    }
   },
 
   // --- 設定 ---
@@ -72,10 +77,23 @@ contextBridge.exposeInMainWorld('api', {
     getModDetail: (modId) => ipcRenderer.invoke('nexus:get-mod-detail', modId),
     getModFiles: (modId) => ipcRenderer.invoke('nexus:get-mod-files', modId),
     installMod: (modId) => ipcRenderer.invoke('nexus:install-mod', modId),
-    installFile: (modId, fileId) => ipcRenderer.invoke('nexus:install-file', modId, fileId),
+    installFile: (modId, fileId, version, fallbackToLatest) => ipcRenderer.invoke('nexus:install-file', modId, fileId, version, fallbackToLatest),
     getInstalledMods: () => ipcRenderer.invoke('nexus:get-installed-mods'),
+    resolveProfileSources: (filenames) => ipcRenderer.invoke('profiles:resolve-nexus-sources', filenames),
     forgetInstalled: (modId) => ipcRenderer.invoke('nexus:forget-installed', modId),
     clearCache: (prefix) => ipcRenderer.invoke('nexus:clear-cache', prefix),
+    checkUpdates: () => ipcRenderer.invoke('nexus:check-updates'),
+    checkUpdatesForce: () => ipcRenderer.invoke('nexus:check-updates-force'),
+    onDownloadProgress: (cb) => {
+      const handler = (_, progress) => cb(progress)
+      ipcRenderer.on('mods:download-progress', handler)
+      return () => ipcRenderer.removeListener('mods:download-progress', handler)
+    },
+  },
+
+  // --- Steam Workshop 瀏覽 (dev-only) ---
+  steam: {
+    browse: (opts) => ipcRenderer.invoke('steam:browse', opts),
   },
 
   // --- App 更新 ---
@@ -88,6 +106,11 @@ contextBridge.exposeInMainWorld('api', {
       const handler = (_, progress) => cb(progress)
       ipcRenderer.on('app-update:progress', handler)
       return () => ipcRenderer.removeListener('app-update:progress', handler)
+    },
+    onInstallFailed: (cb) => {
+      const handler = (_, message) => cb(message)
+      ipcRenderer.on('app-update:install-failed', handler)
+      return () => ipcRenderer.removeListener('app-update:install-failed', handler)
     }
   },
 
@@ -105,7 +128,6 @@ contextBridge.exposeInMainWorld('api', {
   // --- 語言 ---
   locale: {
     getSupported: () => ipcRenderer.invoke('locale:get-supported'),
-    detect: () => ipcRenderer.invoke('locale:detect'),
     getPreference: () => ipcRenderer.invoke('locale:get-preference'),
     setPreference: (code) => ipcRenderer.invoke('locale:set-preference', code)
   },
@@ -118,15 +140,17 @@ contextBridge.exposeInMainWorld('api', {
     openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
     openPath: (filePath) => ipcRenderer.invoke('shell:open-path', filePath),
     getPathForFile: (file) => webUtils.getPathForFile(file),
-    onVisibilityChange: (cb) => {
-      const handler = (_, visible) => cb(visible)
-      ipcRenderer.on('window:visibility', handler)
-      return () => ipcRenderer.removeListener('window:visibility', handler)
-    },
     setTitleBarTheme: (isDark) => ipcRenderer.invoke('app:set-titlebar-theme', isDark),
     quit: () => ipcRenderer.invoke('app:quit'),
     getAutoStart: () => ipcRenderer.invoke('app:get-auto-start'),
     setAutoStart: (enabled) => ipcRenderer.invoke('app:set-auto-start', enabled)
+  },
+
+  // --- 介面縮放 ---
+  ui: {
+    setZoom: (factor) => webFrame.setZoomFactor(factor),
+    getZoom: () => webFrame.getZoomFactor(),
+    fitWindow: (contentWidth) => ipcRenderer.invoke('ui:fit-window', contentWidth),
   },
 
   // --- 視窗控制 (Linux/Mac fallback for missing titleBarOverlay) ---

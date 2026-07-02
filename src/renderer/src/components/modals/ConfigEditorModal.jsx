@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, FileText, Save, RotateCcw, Sliders, RefreshCw, Search } from 'lucide-react';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { cleanModName } from '../../constants/modIcons';
-import { parseConfigFile, serializeConfig, appendKeyval, removeKeyval, valueNeedsQuote, serializeLuaArray } from '../../utils/config-parser';
+import { parseConfigFile, serializeConfig, appendKeyval, removeKeyval, valueNeedsQuote, serializeLuaArray, isUserConfigFile } from '../../utils/config-parser';
 import { buildKeyMatcher, countSchemaMatches } from '../../utils/config-search';
 import SchemaRenderer from './config-editor/SchemaRenderer';
 import CommentModeRenderer from './config-editor/CommentModeRenderer';
@@ -25,6 +26,7 @@ function defaultToValueStr(keyDef) {
 }
 
 const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
+  useEscapeKey(onClose, isOpen);
   const [configFiles, setConfigFiles] = useState([]);
   const [_selectedFile, setSelectedFile] = useState(null);
   const [entries, setEntries] = useState([]);
@@ -90,10 +92,7 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
           // --- Fallback: comment-driven mode ---
           const files = await window.api.mods.getConfigFiles(mod.filename);
           if (cancelled) return;
-          const filtered = (files || []).filter(f =>
-            f.name.toLowerCase() !== 'main.lua' &&
-            !f.relativePath.toLowerCase().startsWith('scripts/')
-          );
+          const filtered = (files || []).filter(isUserConfigFile);
 
           const allEntries = [];
           const validFiles = [];
@@ -176,18 +175,27 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
       const newStr = isInt ? String(Math.round(n)) : String(parseFloat(n.toFixed(4)));
       return newStr === e.value ? e : { ...e, value: newStr };
     });
-    try {
-      // 按檔案分組儲存
-      for (const file of configFiles) {
-        const fileEntries = normalizedEntries.filter(e => e._file?.relativePath === file.relativePath);
-        const text = serializeConfig(fileEntries);
+    // 按檔案分組儲存 — save each file independently so one failure doesn't
+    // abort the rest, and report exactly which files failed.
+    const failed = [];
+    for (const file of configFiles) {
+      const fileEntries = normalizedEntries.filter(e => e._file?.relativePath === file.relativePath);
+      const text = serializeConfig(fileEntries);
+      try {
         await window.api.mods.saveConfig(mod.filename, file.relativePath, text);
+      } catch {
+        failed.push(file.name || file.relativePath);
       }
+    }
+    if (failed.length === 0) {
       setEntries(normalizedEntries);
       setOriginalEntries(JSON.parse(JSON.stringify(normalizedEntries)));
       addToast(t.toastConfigSaved, 'success');
-    } catch {
-      addToast(t.toastConfigError, 'error');
+    } else {
+      // Some/all files failed. Keep the dirty state so Save stays enabled for a
+      // retry (re-writing the succeeded files is idempotent), and name the
+      // failures instead of a generic error that hides what's half-saved.
+      addToast(`${t.toastConfigError}: ${failed.join(', ')}`, 'error');
     }
     setSaving(false);
   };
@@ -246,8 +254,14 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
     });
   };
 
-  const hasChanges = JSON.stringify(entries) !== JSON.stringify(originalEntries);
-  const keyvalEntries = entries.filter(e => e.type === 'keyval');
+  // Memoize: both run on every render (incl. every keystroke), and a large mod
+  // can have hundreds of keyval entries — double-stringifying them per render
+  // is the heaviest per-render cost in this modal.
+  const hasChanges = useMemo(
+    () => JSON.stringify(entries) !== JSON.stringify(originalEntries),
+    [entries, originalEntries]
+  );
+  const keyvalEntries = useMemo(() => entries.filter(e => e.type === 'keyval'), [entries]);
 
   // Is every keyval already at its schema default? If so, reset would be a
   // no-op — disable the button. Comment mode has no schema, so fall back to
@@ -278,6 +292,9 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
       <div className="absolute inset-0 bg-black/30 dark:bg-black/50 backdrop-blur-sm animate-zoom-in duration-300" />
       <div
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="config-editor-modal-title"
         className="relative w-full max-w-2xl max-h-[92vh] sm:max-h-[88vh] lg:max-h-[85vh] bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/60 dark:border-slate-700/50 rounded-2xl sm:rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] animate-modal-spring flex flex-col overflow-hidden"
       >
         {/* Header */}
@@ -286,10 +303,10 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
             <Sliders className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-base font-black text-slate-800 dark:text-white tracking-tight truncate">{t.configEditor}</h3>
+            <h3 id="config-editor-modal-title" className="text-base font-black text-slate-800 dark:text-white tracking-tight truncate">{t.configEditor}</h3>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">{cleanModName(mod?.customName || mod?.title || mod?.filename || '')}</p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-90">
+          <button onClick={onClose} aria-label="Close" className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-90">
             <X className="w-5 h-5" />
           </button>
         </div>

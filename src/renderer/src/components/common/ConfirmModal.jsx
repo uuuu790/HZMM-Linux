@@ -1,7 +1,17 @@
-
+import { useEffect, useRef } from 'react';
 import { Trash2, AlertTriangle } from 'lucide-react';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 const ConfirmModal = ({ isOpen, title, description, onConfirm, onCancel, t, confirmVariant = 'danger' }) => {
+  useEscapeKey(onCancel, isOpen);
+
+  // Move keyboard focus to the primary action (confirm) when the modal opens,
+  // so keyboard / screen-reader users land inside the dialog.
+  const confirmRef = useRef(null);
+  useEffect(() => {
+    if (isOpen) confirmRef.current?.focus();
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -9,13 +19,16 @@ const ConfirmModal = ({ isOpen, title, description, onConfirm, onCancel, t, conf
       <div className="absolute inset-0 bg-black/30 dark:bg-black/50 backdrop-blur-sm animate-zoom-in duration-300" />
       <div
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-modal-title"
         className="relative w-full max-w-sm bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border border-white/60 dark:border-slate-700/50 rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.1)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.4)] p-6 md:p-8 animate-modal-spring flex flex-col items-center text-center gap-4"
       >
         <div className={`p-4 rounded-full ${confirmVariant === 'danger' ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-500' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-500'}`}>
           {confirmVariant === 'danger' ? <Trash2 className="w-7 h-7" /> : <AlertTriangle className="w-7 h-7" />}
         </div>
 
-        <h3 className="text-lg font-black text-slate-800 dark:text-white tracking-tight">{title}</h3>
+        <h3 id="confirm-modal-title" className="text-lg font-black text-slate-800 dark:text-white tracking-tight">{title}</h3>
         {typeof description === 'string'
           ? <p className="text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed whitespace-pre-line">{description}</p>
           : <div className="text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed">{description}</div>
@@ -29,6 +42,7 @@ const ConfirmModal = ({ isOpen, title, description, onConfirm, onCancel, t, conf
             {t.confirmCancel}
           </button>
           <button
+            ref={confirmRef}
             onClick={() => { onConfirm(); onCancel(); }}
             className={`flex-1 px-4 py-2.5 text-sm font-bold rounded-full text-white transition-all duration-300 active:scale-95 ${
               confirmVariant === 'danger'

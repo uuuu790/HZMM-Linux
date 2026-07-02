@@ -110,7 +110,7 @@ export const APP_STYLES = `
   /* Auto-hiding scrollbar — thumb is transparent by default and only appears
      while the user is actively scrolling (or hovering the track). A small
      JS handler toggles the .is-scrolling class on an idle timer. */
-  .scroll-fade-thumb::-webkit-scrollbar { width: 8px; }
+  .scroll-fade-thumb::-webkit-scrollbar { width: 8px; height: 8px; }
   .scroll-fade-thumb::-webkit-scrollbar-track { background: transparent; }
   .scroll-fade-thumb::-webkit-scrollbar-thumb {
     background-color: transparent;
@@ -326,7 +326,7 @@ export const APP_STYLES = `
     position: absolute;
     left: 0;
     height: 100%;
-    width: 150px;
+    width: 48px;
     background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.07) 0%, rgba(0,0,0,0) 100%);
   }
   .sidebar-nav input:nth-of-type(1):checked ~ .glider-container .glider { transform: translateY(0); }
@@ -334,6 +334,7 @@ export const APP_STYLES = `
   .sidebar-nav input:nth-of-type(3):checked ~ .glider-container .glider { transform: translateY(200%); }
   .sidebar-nav input:nth-of-type(4):checked ~ .glider-container .glider { transform: translateY(300%); }
   .sidebar-nav input:nth-of-type(5):checked ~ .glider-container .glider { transform: translateY(400%); }
+  .sidebar-nav input:nth-of-type(6):checked ~ .glider-container .glider { transform: translateY(500%); }
 
   /* Tab container max-width spring. Only animate when viewport is wide enough
      for the 1600px Nexus width to actually differ from the 1152px (max-w-6xl)

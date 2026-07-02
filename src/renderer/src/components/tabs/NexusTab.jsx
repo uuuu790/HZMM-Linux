@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Search, RefreshCw, ExternalLink, DownloadCloud, Crown, Flame, Clock, Sparkles, TrendingUp, X } from 'lucide-react';
+import { Search, RefreshCw, ExternalLink, DownloadCloud, Crown, Key, Flame, Clock, Sparkles, TrendingUp, X } from 'lucide-react';
 import NexusModCard from '../common/NexusModCard';
 import NexusModCardSkeleton from '../common/NexusModCardSkeleton';
 import NexusModDetailModal from '../modals/NexusModDetailModal';
@@ -58,6 +58,9 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
   // `{ mod, files }` when open, null when closed.
   const [filePicker, setFilePicker] = useState(null);
   const [installingFileId, setInstallingFileId] = useState(null);
+  // Download % for the in-flight install (from the main-process downloader).
+  // null when not downloading, or when the server sends no content-length.
+  const [downloadProgress, setDownloadProgress] = useState(null);
 
   // "Bootup" gate — keep showing lightweight skeletons during the parent
   // container's 500ms max-width spring transition, even if the API response
@@ -105,6 +108,9 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
   // just mod-level (which would paint every file in the mod as installed
   // even when only one was actually installed).
   const [installedList, setInstalledList] = useState([]);
+  // Manual-refresh trigger: bumping this re-runs the loader effect even when
+  // category/query are unchanged (used after clearing the server-side cache).
+  const [refreshKey, setRefreshKey] = useState(0);
   const refreshInstalledSet = () => {
     window.api?.nexus?.getInstalledMods?.().then(list => {
       setInstalledList(Array.isArray(list) ? list : []);
@@ -118,6 +124,12 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
     refreshInstalledSet();
     const unsubscribe = window.api?.mods?.onUpdated?.(() => refreshInstalledSet());
     return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
+  }, []);
+  // Subscribe to main-process download progress so the installing card shows a
+  // live percentage instead of an indeterminate spinner.
+  useEffect(() => {
+    const unsub = window.api?.nexus?.onDownloadProgress?.((p) => setDownloadProgress(p));
+    return () => { if (typeof unsub === 'function') unsub(); };
   }, []);
   // Mod-level set: any file of this mod counts. Used by the card + modal title.
   const installedSet = useMemo(
@@ -165,7 +177,7 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
     });
 
     return () => { cancelled = true; };
-  }, [category, debouncedQuery]);
+  }, [category, debouncedQuery, refreshKey]);
 
   const handleQuickInstall = async (mod) => {
     if (installingModId) return;
@@ -221,6 +233,7 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
       addToast(`${t.nexusInstallFailedToast}: ${err?.message || err}`, 'error');
     } finally {
       setInstallingModId(null);
+      setDownloadProgress(null);
     }
   };
 
@@ -246,6 +259,7 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
       addToast(`${t.nexusInstallFailedToast}: ${err?.message || err}`, 'error');
     } finally {
       setInstallingFileId(null);
+      setDownloadProgress(null);
     }
   };
 
@@ -254,6 +268,15 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
       ? `https://www.nexusmods.com/humanitz/mods/?BH=0&keyword=${encodeURIComponent(searchQuery)}`
       : 'https://www.nexusmods.com/humanitz';
     window.api?.system?.openExternal?.(url);
+  };
+
+  // Force-refresh the current list/search: drop the cached page server-side,
+  // then bump refreshKey so the loader effect refetches (it otherwise only
+  // fires on category/query change). Await the clear so the refetch can't race
+  // it and read the stale cache entry.
+  const handleRefresh = async () => {
+    await window.api?.nexus?.clearCache?.(debouncedQuery ? 'search' : 'list');
+    setRefreshKey(k => k + 1);
   };
 
   const inSearchMode = !!debouncedQuery;
@@ -271,7 +294,9 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
     if (el) {
       setIndicator({ left: el.offsetLeft, width: el.offsetWidth, ready: true });
     }
-  }, [category]);
+    // Re-measure on search-mode toggle too: the pill container is disabled/
+    // relabeled when inSearchMode flips, which can shift button widths.
+  }, [category, inSearchMode]);
   // Recalibrate when the window resizes (button widths shift at md: breakpoint
   // when the label text toggles visibility).
   useEffect(() => {
@@ -287,6 +312,10 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
   // against V1's snake_case. Adapt the mod object on its way in.
   const adaptedMods = useMemo(() => mods.map(m => ({
     ...m,
+    // V2 GraphQL's ID scalar can arrive as a string; normalize to Number so it
+    // matches installingModId (Number) and installedSet (Number) — otherwise
+    // `5 === "5"` is false and the per-card spinner / installed badge misfire.
+    modId: Number(m.modId),
     mod_id: m.modId,
     picture_url: m.pictureUrl || m.thumbnailUrl,
     mod_downloads: m.downloads,
@@ -353,6 +382,15 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
         </div>
 
         <button
+          onClick={handleRefresh}
+          disabled={loading}
+          title={t.nexusRefresh}
+          className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-full bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200/50 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 active:scale-95 transition-all ${loading ? 'opacity-50 pointer-events-none' : ''}`}
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <span className="hidden md:block">{t.nexusRefresh}</span>
+        </button>
+        <button
           onClick={openNexusSearch}
           title={t.nexusSearchOnWeb}
           className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-full bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200/50 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 active:scale-95 transition-all"
@@ -366,19 +404,19 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
           - no-key: amber, clickable, jumps to Settings
           - non-premium (has key): amber, "install gated by Premium"
           - premium: amber crown + username */}
-      <div className="flex items-center gap-4 text-[10px] font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500">
+      <div className="flex items-center gap-4 text-xs sm:text-[13px] font-bold tracking-widest uppercase text-slate-400 dark:text-slate-500">
         {noKey ? (
           <button
             onClick={goToSettings}
             className="flex items-center gap-1 text-amber-500 hover:text-amber-600 dark:hover:text-amber-400 active:scale-95 [transition:color_200ms,scale_100ms] cursor-pointer"
           >
-            <Crown className="w-3 h-3" />
+            <Key className="w-3.5 h-3.5" />
             {t.nexusBrowseOnlyNoKey}
           </button>
         ) : isPremium && premiumName ? (
-          <span className="flex items-center gap-1"><Crown className="w-3 h-3 text-amber-500" />Premium · {premiumName}</span>
+          <span className="flex items-center gap-1"><Crown className="w-3.5 h-3.5 text-amber-500" />Premium · {premiumName}</span>
         ) : (
-          <span className="flex items-center gap-1 text-amber-500"><Crown className="w-3 h-3" />{t.nexusPremiumInstallOnly}</span>
+          <span className="flex items-center gap-1 text-amber-500"><Crown className="w-3.5 h-3.5" />{t.nexusPremiumInstallOnly}</span>
         )}
         {!loading && !error && (
           <span>
@@ -428,6 +466,7 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
                   onQuickInstall={() => handleQuickInstall(mod)}
                   installing={installingModId === mod.modId}
                   installingAny={!!installingModId}
+                  progress={installingModId === mod.modId ? downloadProgress : null}
                   installed={installedSet.has(mod.modId)}
                   entrance="slide"
                   selfMod={isSelfMod(mod)}
@@ -494,11 +533,17 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
 // ============================================================
 export default function NexusTab({ t, lang, addToast, setActiveTab }) {
   const [state, setState] = useState({ loading: true });
+  // Track mount status so the async validate() (which also fires from the
+  // Retry button) never setStates after the tab unmounts. NexusTab is
+  // conditionally rendered, so switching tabs mid-request would otherwise
+  // warn about updating an unmounted component.
+  const mountedRef = useRef(true);
 
   const runValidate = () => {
     setState({ loading: true });
     if (!window.api) { setState({ loading: false, ready: false, reason: 'no-electron' }); return; }
     window.api.nexus.validate().then(res => {
+      if (!mountedRef.current) return;
       // V1 validate returns: ok (premium), or { ok:false, reason } for no-key/invalid/network.
       if (res.ok) {
         setState({ loading: false, ready: true, premium: true, name: res.name });
@@ -512,11 +557,16 @@ export default function NexusTab({ t, lang, addToast, setActiveTab }) {
         setState({ loading: false, ready: false, reason: res.reason, error: res.error });
       }
     }).catch(err => {
+      if (!mountedRef.current) return;
       setState({ loading: false, ready: false, reason: 'network', error: err?.message });
     });
   };
 
-  useEffect(() => { runValidate(); }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    runValidate();
+    return () => { mountedRef.current = false; };
+  }, []);
 
   if (state.loading) {
     return (

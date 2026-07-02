@@ -12,7 +12,11 @@ const SELF_MOD_AUTHOR_SUBSTR = 'www98'; // catches "Wwww98" and reasonable varia
 
 export function isSelfMod(mod) {
   if (!mod) return false;
-  if (mod.name !== SELF_MOD_NAME) return false;
+  // Tolerant name match: a cosmetic upstream rename ("... (HZMM)", a trailing
+  // space, a version suffix, case change) must NOT silently re-enable the
+  // install button. The author substring check keeps false positives unlikely.
+  const name = String(mod.name || '').toLowerCase();
+  if (!name.includes(SELF_MOD_NAME.toLowerCase())) return false;
   const author = String(mod.author || mod.uploaded_by || mod.uploader?.name || '').toLowerCase();
   return author.includes(SELF_MOD_AUTHOR_SUBSTR);
 }

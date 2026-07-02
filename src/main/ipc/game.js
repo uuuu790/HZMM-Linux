@@ -5,7 +5,7 @@ import configStore from '../services/config-store.js'
 import { isGameRunning } from '../services/process-detector.js'
 import logger from '../services/logger.js'
 
-function registerGameIpc(_mainWindow) {
+function registerGameIpc() {
   ipcMain.handle('game:detect-path', () => {
     // Check cache first
     const cached = configStore.get('gamePath')
@@ -94,4 +94,41 @@ function registerGameIpc(_mainWindow) {
   ipcMain.handle('game:is-running', () => isGameRunning())
 }
 
-export { registerGameIpc }
+// Game-running detection lives in the main process. Node timers are NOT subject
+// to the renderer's background throttling, which on Windows is unreliable while
+// the window is hidden/minimized (electron#31016) — so renderer-side polling
+// could miss the game exiting while HZMM sat in the tray and show a stale
+// "running" state on reopen. We poll here, push only on change, and re-assert
+// the current state on window 'show' so reopening from the tray is never stale.
+//
+// This is WINDOW-SCOPED and must be (re)started on every createWindow() — NOT
+// folded into the one-time registerGameIpc() above — otherwise a window rebuilt
+// from the tray gets a dead interval bound to the first (destroyed) window and
+// game-running detection silently stops. Any prior interval is torn down first.
+let runningTimer = null
+let lastRunning = null
+
+function startGameRunningPolling(mainWindow) {
+  if (runningTimer) { clearInterval(runningTimer); runningTimer = null }
+  lastRunning = null
+  const pushRunning = async () => {
+    if (mainWindow.isDestroyed()) return
+    let running
+    try { running = await isGameRunning() } catch { return }
+    if (running === lastRunning) return
+    lastRunning = running
+    mainWindow.webContents.send('game:running', running)
+  }
+  runningTimer = setInterval(pushRunning, 5000)
+  pushRunning()
+  mainWindow.on('show', () => {
+    if (!mainWindow.isDestroyed() && lastRunning !== null) {
+      mainWindow.webContents.send('game:running', lastRunning)
+    }
+  })
+  mainWindow.on('closed', () => {
+    if (runningTimer) { clearInterval(runningTimer); runningTimer = null }
+  })
+}
+
+export { registerGameIpc, startGameRunningPolling }

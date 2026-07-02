@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Package, Puzzle } from 'lucide-react';
 
 export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persistSetting, skipInstallPreview, onManualModChange, onConflictsUpdate }) {
@@ -37,6 +37,9 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
 
   // --- Refresh ---
   const prevModFilenames = useRef(new Set());
+  // Handle for the newly-installed highlight auto-clear timer, tracked so a
+  // rapid second install cancels the prior timer and unmount can clear it.
+  const highlightTimerRef = useRef(null);
   const refreshMods = useCallback(async (trackNew = false) => {
     if (!window.api) return;
     const mods = await window.api.mods.scan();
@@ -48,7 +51,11 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
       });
       if (newMods.size > 0) {
         setNewlyInstalledMods(newMods);
-        setTimeout(() => setNewlyInstalledMods(new Set()), 2000);
+        if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = setTimeout(() => {
+          highlightTimerRef.current = null;
+          setNewlyInstalledMods(new Set());
+        }, 2000);
       }
     }
     prevModFilenames.current = new Set(mods.map(m => m.id || m.filename));
@@ -60,6 +67,12 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
       }).catch(() => {});
     }
   }, [onConflictsUpdate]);
+
+  // Clear the pending newly-installed highlight timer on unmount so it can't
+  // fire setState after the hook's host unmounts.
+  useEffect(() => () => {
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+  }, []);
 
   // --- Module Click ---
   const handleModuleClick = useCallback((modId) => {
@@ -75,7 +88,10 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
         await refreshMods();
         notifyManualChange();
         addToast(result.enabled ? t.toastEnabled : t.toastDisabled, 'success');
-      } catch (err) { console.error('Toggle failed:', err); }
+      } catch (err) {
+        console.error('Toggle failed:', err);
+        addToast(`${t.toastToggleFailed || 'Toggle failed'}: ${err?.message || err}`, 'error');
+      }
     };
     if (isGameRunning) {
       showConfirm(t.gameRunningWarning, t.gameRunningWarningDesc, doToggle, 'warning');

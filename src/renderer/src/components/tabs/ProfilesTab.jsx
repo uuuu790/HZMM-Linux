@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import GlassCard from '../common/GlassCard';
-import { Save, Plus, CheckCircle, Play, Trash2, RefreshCw, ChevronDown, Box, Puzzle } from 'lucide-react';
+import { cleanModName } from '../../constants/modIcons';
+import { Save, Plus, CheckCircle, Play, Trash2, RefreshCw, ChevronDown, Box, Puzzle, Download, Upload } from 'lucide-react';
+import ProfileImportModal from '../modals/ProfileImportModal';
 
 function ProfilesTab({
   t,
@@ -13,7 +15,15 @@ function ProfilesTab({
   handleCreateProfile,
   handleApplyProfile,
   handleDeleteProfile,
+  handleExportProfile,
+  handleImportProfile,
   applyingProfileId,
+  importModal,
+  importDownloading,
+  importProgress,
+  importDownloadAndApply,
+  importApplyAnyway,
+  closeImportModal,
 }) {
   const [expandedId, setExpandedId] = useState(null);
 
@@ -34,6 +44,12 @@ function ProfilesTab({
         </div>
         <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-wide transition-colors duration-700">{t.profiles}</h3>
         <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold transition-colors duration-700 shadow-inner">{profiles.length}</span>
+        <button
+          onClick={handleImportProfile}
+          className="ml-auto flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-full border border-slate-200/80 dark:border-slate-700/70 text-slate-600 dark:text-slate-300 bg-white/60 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/70 hover:border-slate-300 dark:hover:border-slate-600 transition-all duration-300 active:scale-95 shadow-sm"
+        >
+          <Download className="w-3.5 h-3.5" /> {t.importProfile}
+        </button>
       </div>
 
       {/* Create new profile */}
@@ -135,6 +151,15 @@ function ProfilesTab({
                         } {t.applyProfile}
                       </button>
                       <button
+                        onClick={(e) => { e.stopPropagation(); handleExportProfile(profile.id); }}
+                        title={t.exportProfile}
+                        className="p-2 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-all duration-300 hover:scale-110 active:scale-95"
+                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent-500)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = ''; }}
+                      >
+                        <Upload className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile.id); }}
                         className="p-2 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/20 transition-all duration-300 hover:scale-110 active:scale-95"
                       >
@@ -149,7 +174,9 @@ function ProfilesTab({
                     const unknownMods = [];
                     for (const filename of enabledMods) {
                       const mod = moduleMap[filename];
-                      const displayName = mod?.title || filename.replace(/\.(pak|disabled)/gi, '').replace(/_P$/, '').replace(/_/g, ' ').replace(/-/g, ' ');
+                      // Shared name derivation (honors customName, anchored
+                      // extension strip) — same as ModuleList / ModDetailModal.
+                      const displayName = mod?.customName || cleanModName(mod?.title || filename);
                       if (mod?.type === 'PAK') pakMods.push({ filename, name: displayName });
                       else if (mod?.type === 'UE4SS') ue4ssMods.push({ filename, name: displayName });
                       else unknownMods.push({ filename, name: displayName });
@@ -192,6 +219,20 @@ function ProfilesTab({
           })}
         </div>
       )}
+      <ProfileImportModal
+        isOpen={!!importModal}
+        missing={importModal?.missing || []}
+        auto={importModal?.auto || []}
+        manual={importModal?.manual || []}
+        allMissing={!!importModal?.allMissing}
+        premium={!!importModal?.premium}
+        downloading={importDownloading}
+        progress={importProgress}
+        onConfirm={importDownloadAndApply}
+        onApplyAnyway={importApplyAnyway}
+        onCancel={closeImportModal}
+        t={t}
+      />
     </div>
   );
 }

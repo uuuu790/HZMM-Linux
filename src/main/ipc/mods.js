@@ -8,7 +8,7 @@ import { assertSafeSegment } from '../services/path-safety.js'
 import logger from '../services/logger.js'
 import { scanMods, isCacheValid, updateCacheState, invalidateCache, getCachedMods } from './mods-scan.js'
 import { syncUe4ssModRegistry, removeFromUe4ssModRegistry } from './mods-registry.js'
-import { installMods } from './mods-install.js'
+import { installMods, serializeModWrite } from './mods-install.js'
 import { ALLOWED_MOD_HOSTS, isAllowedModUrl } from './mods-download.js'
 
 // Re-export for external consumers (tests, etc.)
@@ -18,15 +18,10 @@ export { ALLOWED_MOD_HOSTS, isAllowedModUrl }
 // re-export so the test suite doesn't break.
 export { resolveModConfigPath } from './mods-config.js'
 
-// Install / scan mutex: serializes all write-side IPC calls to prevent
-// concurrent interleaving that could leave the cache inconsistent with disk.
-let modWriteChain = Promise.resolve()
-function serializeModWrite(task) {
-  const next = modWriteChain.then(() => task())
-  modWriteChain = next.catch(() => {})
-  return next
-}
-
+// serializeModWrite (the shared write mutex) is imported from mods-install.js
+// so toggle/remove here share ONE chain with every install path — preventing a
+// Nexus/URL install from interleaving with a toggle on the same files.
+//
 // Core mod IPC: scan / toggle / install / remove / preview / URL-install.
 // Config / profile snapshot / readme handlers live in sibling modules
 // (mods-config.js, mods-profiles.js, mods-readme.js) — see main/index.js
@@ -34,21 +29,22 @@ function serializeModWrite(task) {
 function registerModsIpc(mainWindow) {
   // --- Scan ---
   ipcMain.handle('mods:scan', () => {
-    let mods
+    let cached
     if (isCacheValid()) {
-      mods = getCachedMods()
+      cached = getCachedMods()
     } else {
-      mods = scanMods()
-      updateCacheState(mods)
+      cached = scanMods()
+      updateCacheState(cached)
     }
-    // Merge custom display names from config
+    // Shallow-copy each mod before merging custom names so we never mutate the
+    // long-lived cache (which would leave stale customName on cleared mods).
     const customNames = configStore.get('modCustomNames', {})
-    if (Object.keys(customNames).length > 0) {
-      mods.forEach(mod => {
-        if (customNames[mod.id]) mod.customName = customNames[mod.id]
-      })
-    }
-    return mods
+    return cached.map(mod => {
+      const copy = { ...mod }
+      if (customNames[mod.id]) copy.customName = customNames[mod.id]
+      else delete copy.customName
+      return copy
+    })
   })
 
   ipcMain.handle('mods:invalidate-cache', () => {
@@ -203,9 +199,10 @@ function registerModsIpc(mainWindow) {
   }))
 
   // --- Install ---
-  ipcMain.handle('mods:install', (_, filePaths) =>
-    serializeModWrite(() => installMods(filePaths, mainWindow))
-  )
+  // installMods serializes its own write phase internally (and validates
+  // filePaths), so we must NOT wrap it in serializeModWrite again here —
+  // double-wrapping deadlocks (outer task awaits inner, inner queued behind it).
+  ipcMain.handle('mods:install', (_, filePaths) => installMods(filePaths, mainWindow))
 
   // --- Remove ---
   // Serialized with install/toggle so concurrent operations don't
@@ -303,6 +300,14 @@ function registerModsIpc(mainWindow) {
 
   // --- Install Preview ---
   ipcMain.handle('mods:preview', async (_, filePaths) => {
+    // Same trust-boundary validation as installMods — preview reads / extracts
+    // the given archives, so reject non-absolute or non-.zip/.rar/.pak inputs.
+    if (!Array.isArray(filePaths)) throw new Error('Invalid file list')
+    for (const fp of filePaths) {
+      if (typeof fp !== 'string' || !path.isAbsolute(fp)) throw new Error(`Invalid file path: ${String(fp)}`)
+      const ext = path.extname(fp).toLowerCase()
+      if (ext !== '.zip' && ext !== '.rar' && ext !== '.pak') throw new Error(`Unsupported file type: ${path.basename(fp)}`)
+    }
     const gamePath = configStore.get('gamePath')
     const allPaksPaths = gamePath ? getAllPaksPaths(gamePath) : []
     const ue4ssModsPath = gamePath ? getUe4ssModsPath(gamePath) : null
@@ -313,7 +318,10 @@ function registerModsIpc(mainWindow) {
       try {
         for (const f of fs.readdirSync(pp)) {
           if (f.endsWith('.pak') || f.endsWith('.pak.disabled')) {
-            existingPaks.add(f.replace('.disabled', '').replace(/_P\.pak$/i, '').toLowerCase())
+            // Strip .pak unconditionally then the _P suffix, mirroring the
+            // archive-side mod-name normalization (archive.js). Using /_P\.pak$/
+            // alone left the extension on plain non-_P paks, so they never matched.
+            existingPaks.add(f.replace('.disabled', '').replace(/\.pak$/i, '').replace(/_P$/i, '').toLowerCase())
           }
         }
       } catch { /* directory may not exist yet — skip */ }

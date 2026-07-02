@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Package, Puzzle, Sliders, FileText, RefreshCw, Link2 } from 'lucide-react';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { sanitizeReadme } from '../../utils/sanitize-readme';
+import { isUserConfigFile } from '../../utils/config-parser';
 import { getModIcon, cleanModName } from '../../constants/modIcons';
 
 // Map app language codes to readme section headers
@@ -41,6 +43,7 @@ function extractLocalizedReadme(content, lang) {
 }
 
 const ModDetailModal = ({ isOpen, mod, onClose, onOpenConfig, t, lang }) => {
+  useEscapeKey(onClose, isOpen);
   const [readme, setReadme] = useState(null);
   const [readmeLoading, setReadmeLoading] = useState(false);
   const [hasConfig, setHasConfig] = useState(false);
@@ -93,10 +96,7 @@ const ModDetailModal = ({ isOpen, mod, onClose, onOpenConfig, t, lang }) => {
     if (window.api.mods.getConfigFiles) {
       window.api.mods.getConfigFiles(mod.filename).then(files => {
         if (cancelled) return;
-        const filtered = (files || []).filter(f =>
-          f.name.toLowerCase() !== 'main.lua' &&
-          !f.relativePath.toLowerCase().startsWith('scripts/')
-        );
+        const filtered = (files || []).filter(isUserConfigFile);
         configResult = filtered.length > 0;
         setHasConfig(configResult);
         configDone = true;
@@ -149,6 +149,9 @@ const ModDetailModal = ({ isOpen, mod, onClose, onOpenConfig, t, lang }) => {
       <div className="absolute inset-0 bg-black/30 dark:bg-black/50 backdrop-blur-sm animate-zoom-in duration-300" />
       <div
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mod-detail-modal-title"
         className="relative w-[80vw] max-w-3xl max-h-[80vh] bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-white/60 dark:border-slate-700/50 rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] animate-modal-spring flex flex-col overflow-hidden"
       >
         {/* Header */}
@@ -157,7 +160,7 @@ const ModDetailModal = ({ isOpen, mod, onClose, onOpenConfig, t, lang }) => {
             <IconComponent className={`w-7 h-7 ${iconInfo.iconColor}`} />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-black text-slate-800 dark:text-white tracking-tight truncate">{title}</h3>
+            <h3 id="mod-detail-modal-title" className="text-lg font-black text-slate-800 dark:text-white tracking-tight truncate">{title}</h3>
             <div className="flex items-center gap-2 mt-1">
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
                 mod.hybrid ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400'
@@ -172,7 +175,7 @@ const ModDetailModal = ({ isOpen, mod, onClose, onOpenConfig, t, lang }) => {
               </span>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-90 shrink-0">
+          <button onClick={onClose} aria-label="Close" className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-90 shrink-0">
             <X className="w-5 h-5" />
           </button>
         </div>

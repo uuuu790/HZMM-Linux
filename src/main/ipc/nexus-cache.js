@@ -13,7 +13,7 @@
 export const CACHE_VERSION = 'v2'
 
 export const CACHE_TTL = {
-  list: 10 * 60 * 1000,
+  list: 60 * 60 * 1000,
   detail: 60 * 60 * 1000,
   files: 30 * 60 * 1000,
   validate: 5 * 60 * 1000,

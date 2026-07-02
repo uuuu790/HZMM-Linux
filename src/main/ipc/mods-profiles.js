@@ -83,7 +83,12 @@ export function registerModsProfilesIpc() {
         const dir = path.dirname(resolved)
         fs.mkdirSync(dir, { recursive: true })
 
-        fs.writeFileSync(resolved, content, 'utf-8')
+        // Atomic write: tmp + rename. A crash / power-loss mid-write would
+        // otherwise leave a truncated, corrupt config file. The tmp sits next
+        // to the target (same dir/volume) so renameSync never hits EXDEV.
+        const tmp = `${resolved}.tmp`
+        fs.writeFileSync(tmp, content, 'utf-8')
+        fs.renameSync(tmp, resolved)
       }
     }
 

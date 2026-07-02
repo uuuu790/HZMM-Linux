@@ -123,7 +123,12 @@ function registerSavesIpc(_mainWindow) {
       if (!fs.statSync(worldDir).isDirectory()) continue
       for (const file of fs.readdirSync(worldDir)) {
         try { assertSafeSegment('file', file) } catch { continue }
-        fs.copyFileSync(path.join(worldDir, file), path.join(savePath, file))
+        // Atomic restore: copy to a temp file then rename onto the live save, so
+        // a process kill mid-copy can't leave the existing save truncated/corrupt.
+        const dest = path.join(savePath, file)
+        const tmp = `${dest}.tmp`
+        fs.copyFileSync(path.join(worldDir, file), tmp)
+        fs.renameSync(tmp, dest)
       }
       restoredWorlds.push(worldName)
     }

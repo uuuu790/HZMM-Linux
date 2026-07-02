@@ -117,7 +117,10 @@ async function downloadAndInstallFromUrl(url, mainWindow) {
     logger.info(`Nexus download: game=${nexusInfo.game}, mod=${nexusInfo.modId}, file=${nexusInfo.fileId || 'latest'}`)
     const resolved = await resolveNexusDownloadUrl(nexusInfo, apiKey)
     url = resolved.url
-    logger.info(`Nexus resolved download URL: ${url.slice(0, 80)}...`)
+    // Log only the host — the resolved CDN URL carries a short-lived signed
+    // auth token in its query string that must NOT be persisted to the log
+    // file (which is readable from the renderer via logger:read-recent).
+    logger.info(`Nexus resolved download from host: ${new URL(url).hostname}`)
   }
 
   // Validate URL against allowed hosts
@@ -127,20 +130,38 @@ async function downloadAndInstallFromUrl(url, mainWindow) {
 
   const urlObj = new URL(url)
   let filename = path.basename(urlObj.pathname)
-  if (!filename || !filename.match(/\.(zip|rar|pak)$/i)) filename = `mod_download_${Date.now()}.zip`
-  const tempPath = path.join(configStore.getConfigDir(), 'temp', filename)
-  fs.mkdirSync(path.dirname(tempPath), { recursive: true })
+  if (!filename || !filename.match(/\.(zip|rar|pak)$/i)) filename = 'mod_download.zip'
+  // Unique temp subdir per download so concurrent installs never share a path,
+  // while preserving the real filename (.pak _P suffix affects load order).
+  const tempDir = path.join(configStore.getConfigDir(), 'temp', `dl_${Date.now()}`)
+  const tempPath = path.join(tempDir, filename)
+  fs.mkdirSync(tempDir, { recursive: true })
   try {
+    // Pass the allowlist so EVERY redirect hop is re-validated, not just the
+    // initial URL — otherwise a 3xx to an arbitrary host would be followed.
     await downloadFile(url, tempPath, (progress) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mods:download-progress', progress)
-    })
+    }, ALLOWED_MOD_HOSTS)
     const result = await installMods([tempPath], mainWindow)
-    try { fs.unlinkSync(tempPath) } catch { /* temp file already gone */ }
+    try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch { /* temp already gone */ }
     return result
   } catch (err) {
-    try { fs.unlinkSync(tempPath) } catch { /* temp file already gone */ }
+    try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch { /* temp already gone */ }
     throw err
   }
 }
 
-export { ALLOWED_MOD_HOSTS, isAllowedModUrl, parseNexusUrl, downloadAndInstallFromUrl, nexusApiRequest, resolveNexusDownloadUrl }
+// Remove orphaned download temp dirs left by a crash/power-loss mid-download.
+// The per-call try/finally only cleans the in-process happy/throw paths; a hard
+// kill leaves `temp/dl_*` (often a large partial download) behind forever.
+// Swept once on app startup — at that point no download can be in flight.
+function cleanupStaleDownloadTemp() {
+  try {
+    const tempRoot = path.join(configStore.getConfigDir(), 'temp')
+    if (fs.existsSync(tempRoot)) fs.rmSync(tempRoot, { recursive: true, force: true })
+  } catch (err) {
+    logger.warn(`Failed to sweep stale download temp: ${err.message}`)
+  }
+}
+
+export { ALLOWED_MOD_HOSTS, isAllowedModUrl, parseNexusUrl, downloadAndInstallFromUrl, nexusApiRequest, resolveNexusDownloadUrl, cleanupStaleDownloadTemp }

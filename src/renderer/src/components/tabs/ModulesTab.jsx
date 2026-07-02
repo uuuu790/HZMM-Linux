@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Package, Puzzle, Search, X, Power, Trash2, ChevronDown, RefreshCw } from 'lucide-react';
+import { Package, Puzzle, Search, X, Power, Trash2, ChevronDown, RefreshCw, Binary } from 'lucide-react';
 import ModuleList from '../common/ModuleList';
 
 function ModulesTab({
@@ -32,6 +32,10 @@ function ModulesTab({
   isDark,
   handleRescan,
   rescanning,
+  modUpdateMap,
+  updatingModId,
+  onUpdateMod,
+  nexusApiKey,
 }) {
   const [sortOpen, setSortOpen] = useState(false);
   const sortDropdownRef = useRef(null);
@@ -85,7 +89,13 @@ function ModulesTab({
 
   const processedModules = useMemo(() => {
     let result = [...modules]
-    if (filterType !== 'all') result = result.filter(m => m.type === filterType)
+    // `C++` is a UE4SS subtype filter, not a real mod type. Pre-filtering to cpp
+    // here works together with the render-time block visibility guards below:
+    // when filterType is 'C++', only the UE4SS·C++ block renders (the PAK and
+    // Lua guards exclude it), so this cpp-only list never reaches a block that
+    // would mis-render it. Keep the pre-filter and the guards in sync.
+    if (filterType === 'C++') result = result.filter(m => m.type === 'UE4SS' && m.subtype === 'cpp')
+    else if (filterType !== 'all') result = result.filter(m => m.type === filterType)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       result = result.filter(m => (m.customName || m.title || m.filename).toLowerCase().includes(q))
@@ -153,7 +163,7 @@ function ModulesTab({
                       width: filterIndicator.width,
                     }}
                   />
-                  {['all', 'PAK', 'UE4SS'].map(type => (
+                  {['all', 'PAK', 'UE4SS', 'C++'].map(type => (
                     <button
                       key={type}
                       ref={el => { filterRefs.current[type] = el; }}
@@ -260,71 +270,66 @@ function ModulesTab({
             </div>
           )}
 
-          {/* Module lists */}
-          {filterType === 'all' ? (
-            <>
-              <ModuleList
-                modules={processedModules}
-                type="PAK"
-                title={t.pakTitle}
-                icon={Package}
-                colorClass="text-indigo-600 dark:text-indigo-400"
-                activeModuleId={activeModuleId}
-                onModuleClick={handleModuleClick}
-                onToggle={handleToggleEnable}
-                onUninstallLocal={handleUninstallLocalMod}
-                onOpenConfig={setConfigEditorMod}
-                onRenameMod={handleRenameMod}
-                t={t}
-                lang={lang}
-                newlyInstalledMods={newlyInstalledMods}
-                selectedMods={selectedMods}
-                onToggleSelect={handleToggleSelect}
-                onRangeSelect={handleRangeSelect}
-                conflictModSet={conflictModSet}
-              />
-              <ModuleList
-                modules={processedModules}
-                type="UE4SS"
-                title={t.ue4ssTitle}
-                icon={Puzzle}
-                colorClass="text-emerald-600 dark:text-emerald-400"
-                activeModuleId={activeModuleId}
-                onModuleClick={handleModuleClick}
-                onToggle={handleToggleEnable}
-                onUninstallLocal={handleUninstallLocalMod}
-                onOpenConfig={setConfigEditorMod}
-                onRenameMod={handleRenameMod}
-                t={t}
-                lang={lang}
-                newlyInstalledMods={newlyInstalledMods}
-                selectedMods={selectedMods}
-                onToggleSelect={handleToggleSelect}
-                onRangeSelect={handleRangeSelect}
-                conflictModSet={conflictModSet}
-              />
-            </>
-          ) : (
-            <ModuleList
-              modules={processedModules}
-              type={filterType}
-              title={filterType === 'PAK' ? t.pakTitle : t.ue4ssTitle}
-              icon={filterType === 'PAK' ? Package : Puzzle}
-              colorClass={filterType === 'PAK' ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}
-              activeModuleId={activeModuleId}
-              onModuleClick={handleModuleClick}
-              onToggle={handleToggleEnable}
-              onUninstallLocal={handleUninstallLocalMod}
-              onOpenConfig={setConfigEditorMod}
-              onRenameMod={handleRenameMod}
-              t={t}
-              lang={lang}
-              newlyInstalledMods={newlyInstalledMods}
-              selectedMods={selectedMods}
-              onToggleSelect={handleToggleSelect}
-              onRangeSelect={handleRangeSelect}
-            />
-          )}
+          {/* Module lists — PAK / UE4SS·Lua / UE4SS·C++ as parallel blocks.
+              commonListProps dedupes the long prop list across all three. Each
+              ModuleList returns null when its (type, subtype) slice is empty,
+              so empty subgroups simply don't render. */}
+          {(() => {
+            const commonListProps = {
+              activeModuleId,
+              onModuleClick: handleModuleClick,
+              onToggle: handleToggleEnable,
+              onUninstallLocal: handleUninstallLocalMod,
+              onOpenConfig: setConfigEditorMod,
+              onRenameMod: handleRenameMod,
+              t, lang,
+              newlyInstalledMods,
+              selectedMods,
+              onToggleSelect: handleToggleSelect,
+              onRangeSelect: handleRangeSelect,
+              conflictModSet,
+              modUpdateMap,
+              updatingModId,
+              onUpdateMod,
+              nexusApiKey,
+            };
+            return (
+              <>
+                {(filterType === 'all' || filterType === 'PAK') && (
+                  <ModuleList
+                    modules={processedModules}
+                    type="PAK"
+                    title={t.pakTitle}
+                    icon={Package}
+                    colorClass="text-indigo-600 dark:text-indigo-400"
+                    {...commonListProps}
+                  />
+                )}
+                {(filterType === 'all' || filterType === 'UE4SS') && (
+                  <ModuleList
+                    modules={processedModules}
+                    type="UE4SS"
+                    subtype="lua"
+                    title={t.ue4ssLuaTitle || 'UE4SS · Lua'}
+                    icon={Puzzle}
+                    colorClass="text-emerald-600 dark:text-emerald-400"
+                    {...commonListProps}
+                  />
+                )}
+                {(filterType === 'all' || filterType === 'UE4SS' || filterType === 'C++') && (
+                  <ModuleList
+                    modules={processedModules}
+                    type="UE4SS"
+                    subtype="cpp"
+                    title={t.ue4ssCppTitle || 'UE4SS · C++'}
+                    icon={Binary}
+                    colorClass="text-amber-600 dark:text-amber-400"
+                    {...commonListProps}
+                  />
+                )}
+              </>
+            );
+          })()}
 
         </>
       )}

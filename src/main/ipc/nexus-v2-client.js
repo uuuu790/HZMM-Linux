@@ -18,6 +18,13 @@ export const GAME_ID = 5743
 const DEFAULT_BROWSE_COUNT = 100
 const REQUEST_TIMEOUT_MS = 10000
 
+// Concatenate raw response chunks THEN decode once. Decoding each chunk
+// independently (the old `data += chunk` form) mangles any multi-byte UTF-8
+// character that straddles a TCP chunk boundary into U+FFFD.
+export function decodeUtf8Chunks(chunks) {
+  return Buffer.concat(chunks).toString('utf8')
+}
+
 // Shared fragment used everywhere we return a mod card.
 const MOD_CARD_FIELDS = `
   modId
@@ -60,9 +67,10 @@ function gqlRequest(query, variables) {
         'Content-Length': Buffer.byteLength(body),
       },
     }, (res) => {
-      let data = ''
-      res.on('data', c => { data += c })
+      const chunks = []
+      res.on('data', c => chunks.push(c))
       res.on('end', () => {
+        const data = decodeUtf8Chunks(chunks)
         if (res.statusCode < 200 || res.statusCode >= 300) {
           return reject(new Error(`V2 HTTP ${res.statusCode}: ${data.slice(0, 200)}`))
         }

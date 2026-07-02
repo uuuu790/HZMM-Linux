@@ -1,5 +1,6 @@
 
 import { Package, Puzzle, FileText, CheckCircle, RefreshCw, X, Folder, AlertTriangle } from 'lucide-react';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 const TYPE_LABELS = {
   'pak-only': { label: 'PAK Resource Mod', icon: Package, color: 'text-indigo-500' },
@@ -11,18 +12,24 @@ const TYPE_LABELS = {
 };
 
 const PreviewModal = ({ isOpen, onClose, previews, loading, onConfirm, onDontShowAgain, t }) => {
+  useEscapeKey(onClose, isOpen);
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 [-webkit-app-region:no-drag]">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-zoom-in" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="preview-modal-title"
+        className="relative w-full max-w-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring"
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/60 dark:border-slate-700/50">
-          <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+          <h3 id="preview-modal-title" className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <Package className="w-5 h-5" style={{ color: 'var(--accent-500)' }} />
             {t.previewTitle || 'Install Preview'}
           </h3>
-          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+          <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>

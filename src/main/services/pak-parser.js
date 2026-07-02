@@ -128,8 +128,35 @@ function readPakIndex(filePath) {
             offset += 4 // compressionBlockSize
             if (offset > indexBuf.length) break
           } else {
-            // v9+ encoded entry
-            offset += 12
+            // v9+ encoded entry — VARIABLE size. The leading uint32 is a
+            // bitfield encoding which of offset/uncompressed/size are 32- vs
+            // 64-bit and how many compression blocks follow. The old fixed
+            // `+= 12` only matched the uncompressed-32bit-safe case and desynced
+            // the walk on any compressed/multi-block entry, truncating the file
+            // list (and so missing real conflicts). Decode the bitfield to skip
+            // the true record size. Bounds checks below keep a malformed entry
+            // from over-reading.
+            if (offset + 4 > indexBuf.length) break
+            const flags = indexBuf.readUInt32LE(offset)
+            offset += 4
+            const compressionBlockCount = (flags >> 6) & 0xffff
+            const bEncrypted = (flags >> 22) & 0x1
+            const compressionMethodIndex = (flags >> 23) & 0x3f
+            const bSizeIs32BitSafe = (flags >> 29) & 0x1
+            const bUncompressedSizeIs32BitSafe = (flags >> 30) & 0x1
+            const bOffsetIs32BitSafe = (flags >> 31) & 0x1
+            offset += bOffsetIs32BitSafe ? 4 : 8            // Offset
+            offset += bUncompressedSizeIs32BitSafe ? 4 : 8  // UncompressedSize
+            if (compressionMethodIndex !== 0) {
+              offset += bSizeIs32BitSafe ? 4 : 8            // Size (compressed only)
+              // Blocks are stored explicitly only when there are >1 of them, or
+              // exactly 1 but encrypted (single unencrypted block is derived).
+              const storeBlocks = compressionBlockCount > 1 || (compressionBlockCount === 1 && bEncrypted)
+              if (storeBlocks) {
+                if (compressionBlockCount > MAX_COMPRESSION_BLOCKS) break
+                offset += compressionBlockCount * 4         // each block: uint32
+              }
+            }
             if (offset > indexBuf.length) break
           }
         }

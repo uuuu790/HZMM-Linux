@@ -1,22 +1,29 @@
 
 import { FileText, ExternalLink, RefreshCw, X } from 'lucide-react';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 const LogModal = ({ isOpen, onClose, loading, logLines, onOpenLogFile, t }) => {
+  useEscapeKey(onClose, isOpen);
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 [-webkit-app-region:no-drag]">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-zoom-in" onClick={onClose} />
-      <div className="relative w-full max-w-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="log-modal-title"
+        className="relative w-full max-w-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring"
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/60 dark:border-slate-700/50">
-          <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+          <h3 id="log-modal-title" className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <FileText className="w-5 h-5 text-sky-500" /> {t.viewLogs}
           </h3>
           <div className="flex items-center gap-2">
             <button onClick={onOpenLogFile} className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-sky-50 dark:hover:bg-sky-900/30 hover:text-sky-600 dark:hover:text-sky-400 transition-colors border border-slate-200 dark:border-slate-700">
               <ExternalLink className="w-3 h-3" /> {t.openLogFile}
             </button>
-            <button onClick={onClose} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+            <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>

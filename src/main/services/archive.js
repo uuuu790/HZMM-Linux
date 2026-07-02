@@ -7,6 +7,16 @@ import path from 'path'
 import { pipeline } from 'stream/promises'
 import { isPathWithin } from './path-safety.js'
 
+// Decompression-bomb guard. A few-KB archive can declare entries that expand
+// to tens of GB and fill the disk, so we reject before writing the first byte
+// when the declared totals blow past these ceilings.
+//   - 8 GiB total uncompressed: high enough not to false-positive on big but
+//     legit mod packs (full Content/Paks bundles), low enough to stop a bomb.
+//   - 100000 entries: guards against the "millions of tiny files" inode/handle
+//     exhaustion variant that a size cap alone wouldn't catch.
+const MAX_TOTAL_UNCOMPRESSED_BYTES = 8 * 1024 * 1024 * 1024
+const MAX_ENTRY_COUNT = 100000
+
 // Zip Slip 防護：檢查解壓路徑是否超出目標目錄
 function isSafePath(entryName, destDir) {
   return isPathWithin(destDir, path.resolve(destDir, entryName))
@@ -18,6 +28,46 @@ function validateEntries(entryNames, destDir) {
       throw new Error(`Blocked path traversal in archive: ${name}`)
     }
   }
+}
+
+// Reject before extraction if the archive's declared uncompressed size or entry
+// count exceeds the ceilings above. `sizes` are the per-entry uncompressed byte
+// counts pulled from the central directory / RAR headers (callers pass the
+// field name appropriate to their lib: node-stream-zip `.size`, node-unrar-js
+// `.unpSize`). Throwing here keeps the disk-fill bomb from ever touching disk.
+function validateArchiveLimits(sizes) {
+  if (sizes.length > MAX_ENTRY_COUNT) {
+    throw new Error(
+      `Archive rejected: ${sizes.length} entries exceeds the ${MAX_ENTRY_COUNT} entry limit (possible decompression bomb)`
+    )
+  }
+  let total = 0
+  for (const size of sizes) {
+    total += Number(size) || 0
+    if (total > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+      throw new Error(
+        `Archive rejected: uncompressed size exceeds the ${MAX_TOTAL_UNCOMPRESSED_BYTES} byte limit (possible decompression bomb)`
+      )
+    }
+  }
+}
+
+// Pick a destination path that does not clobber an existing file. When the
+// preferred path is taken, append a numeric suffix before the extension —
+// `mod.pak` -> `mod (2).pak` -> `mod (3).pak` — so two paks that share a
+// basename under different subfolders both survive instead of one silently
+// overwriting the other.
+function resolveCollisionFreePath(destPath) {
+  if (!fs.existsSync(destPath)) return destPath
+  const dir = path.dirname(destPath)
+  const ext = path.extname(destPath)
+  const base = path.basename(destPath, ext)
+  for (let i = 2; i < 10000; i++) {
+    const candidate = path.join(dir, `${base} (${i})${ext}`)
+    if (!fs.existsSync(candidate)) return candidate
+  }
+  // Astronomically unlikely; fail loudly rather than overwrite.
+  throw new Error(`Could not find a non-colliding destination for ${destPath}`)
 }
 
 // 分析壓縮檔內部結構，判斷 mod 類型與安裝方式
@@ -104,18 +154,25 @@ async function extractZip(zipPath, destDir, analyzeOnly = false) {
   const zip = new StreamZip.async({ file: zipPath, skipEntryNameValidation: true })
   try {
     const entries = await zip.entries()
-    const entryNames = Object.values(entries).map(e => e.name.replace(/\\/g, '/'))
+    const entryList = Object.values(entries)
+    const entryNames = entryList.map(e => e.name.replace(/\\/g, '/'))
     const analysis = analyzeArchiveStructure(entryNames)
 
     if (analyzeOnly) return { ...analysis, entryNames }
 
+    // validateEntries MUST run before any write — it is the sole zip-slip guard
+    // (skipEntryNameValidation is on so node-stream-zip won't reject the
+    // backslash paths we normalize ourselves). validateArchiveLimits likewise
+    // rejects decompression bombs before the first byte hits disk.
     validateEntries(entryNames, destDir)
+    validateArchiveLimits(entryList.map(e => e.size))
     fs.mkdirSync(destDir, { recursive: true })
 
     if (analysis.type === 'pak-only') {
       for (const pakFile of analysis.pakFiles) {
         const fileName = path.basename(pakFile)
-        await zip.extract(pakFile, path.join(destDir, fileName))
+        const target = resolveCollisionFreePath(path.join(destDir, fileName))
+        await zip.extract(pakFile, target)
       }
     } else {
       await zip.extract(null, destDir)
@@ -155,7 +212,8 @@ function downloadFile(url, destPath, onProgress, allowedHosts = null) {
         return false
       }
     }
-    const doRequest = (downloadUrl) => {
+    const MAX_REDIRECTS = 5
+    const doRequest = (downloadUrl, redirectsLeft = MAX_REDIRECTS) => {
       if (!isAllowed(downloadUrl)) {
         reject(new Error(`Download blocked: ${downloadUrl} is not in the allowed host list`))
         return
@@ -163,7 +221,21 @@ function downloadFile(url, destPath, onProgress, allowedHosts = null) {
       const protocol = downloadUrl.startsWith('https') ? https : http
       const req = protocol.get(downloadUrl, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          doRequest(res.headers.location)
+          res.resume() // drain the redirect body so the underlying socket is freed
+          if (redirectsLeft <= 0) {
+            reject(new Error('Download failed: too many redirects'))
+            return
+          }
+          // Location may be relative ('/path'); resolve it against the current
+          // URL so relative hops work and the allowlist sees an absolute URL.
+          let next
+          try {
+            next = new URL(res.headers.location, downloadUrl).toString()
+          } catch {
+            reject(new Error(`Download failed: invalid redirect target "${res.headers.location}"`))
+            return
+          }
+          doRequest(next, redirectsLeft - 1)
           return
         }
 
@@ -183,11 +255,19 @@ function downloadFile(url, destPath, onProgress, allowedHosts = null) {
 
         const totalSize = parseInt(res.headers['content-length'], 10)
         let downloaded = 0
-        if (onProgress && totalSize) {
-          res.on('data', (chunk) => {
-            downloaded += chunk.length
-            onProgress(Math.round((downloaded / totalSize) * 100))
-          })
+        if (onProgress) {
+          if (totalSize) {
+            res.on('data', (chunk) => {
+              downloaded += chunk.length
+              // Clamp: a server that over-sends past content-length must not
+              // push the bar above 100%.
+              onProgress(Math.min(100, Math.round((downloaded / totalSize) * 100)))
+            })
+          } else {
+            // No usable content-length: emit an indeterminate signal once so the
+            // renderer can show a spinner instead of a bar stuck at 0%.
+            onProgress(-1)
+          }
         }
 
         const file = fs.createWriteStream(destPath)
@@ -226,7 +306,11 @@ async function extractRar(rarPath, destDir, analyzeOnly = false) {
 
   if (analyzeOnly) return { ...analysis, entryNames }
 
+  // validateEntries MUST run before any write — it is the sole zip-slip guard.
+  // validateArchiveLimits rejects decompression bombs before the first byte
+  // hits disk (node-unrar-js exposes uncompressed size as `.unpSize`).
   validateEntries(entryNames, destDir)
+  validateArchiveLimits(fileHeaders.map(h => h.unpSize))
   fs.mkdirSync(destDir, { recursive: true })
 
   // 重新建立 extractor 來解壓（getFileList 後需重建）
@@ -240,8 +324,13 @@ async function extractRar(rarPath, destDir, analyzeOnly = false) {
     for (const f of files) {
       if (f.fileHeader.flags.directory) continue
       const extractedPath = path.join(destDir, f.fileHeader.name)
-      const targetPath = path.join(destDir, path.basename(f.fileHeader.name))
-      if (extractedPath !== targetPath && fs.existsSync(extractedPath)) {
+      const rootPath = path.join(destDir, path.basename(f.fileHeader.name))
+      // Only deep paks need moving to the root; a pak already at the root is
+      // left in place (rootPath === extractedPath).
+      if (extractedPath !== rootPath && fs.existsSync(extractedPath)) {
+        // Disambiguate same-basename paks from different subfolders instead of
+        // letting the second rename silently overwrite the first.
+        const targetPath = resolveCollisionFreePath(rootPath)
         fs.renameSync(extractedPath, targetPath)
       }
     }
@@ -258,8 +347,11 @@ async function extractZipRaw(zipPath, destDir) {
   const zip = new StreamZip.async({ file: zipPath, skipEntryNameValidation: true })
   try {
     const entries = await zip.entries()
-    const entryNames = Object.values(entries).map(e => e.name.replace(/\\/g, '/'))
+    const entryList = Object.values(entries)
+    const entryNames = entryList.map(e => e.name.replace(/\\/g, '/'))
+    // validateEntries MUST run before any write — it is the sole zip-slip guard.
     validateEntries(entryNames, destDir)
+    validateArchiveLimits(entryList.map(e => e.size))
     fs.mkdirSync(destDir, { recursive: true })
     await zip.extract(null, destDir)
     return true
@@ -277,4 +369,8 @@ export {
   analyzeArchiveStructure,
   isSafePath,
   validateEntries,
+  validateArchiveLimits,
+  resolveCollisionFreePath,
+  MAX_TOTAL_UNCOMPRESSED_BYTES,
+  MAX_ENTRY_COUNT,
 }

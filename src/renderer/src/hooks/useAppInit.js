@@ -29,38 +29,19 @@ export function useAppInit({ addToast, t, refreshMods }) {
   // --- Computed ---
   const isProcessing = ue4ssStatus === 'installing' || ue4ssStatus === 'updating';
 
-  // --- Game running detection (every 5s, paused when hidden) ---
+  // --- Game running detection ---
+  // The MAIN process polls the game process and pushes state changes here (and
+  // re-asserts on window show). Polling in main avoids the renderer background
+  // throttling that makes hidden-window polling unreliable on Windows — which
+  // is what left a stale "running" state when the game was closed while HZMM
+  // sat in the tray. One initial query keeps first paint correct before the
+  // first push arrives.
   useEffect(() => {
     if (!window.api) return;
-    let intervalId = null;
-
-    const check = async () => {
-      try { setIsGameRunning(await window.api.game.isRunning()); } catch { /* transient — will retry next tick */ }
-    };
-
-    const startPolling = () => {
-      if (intervalId) return;
-      check();
-      intervalId = setInterval(check, 5000);
-    };
-
-    const stopPolling = () => {
-      if (intervalId) { clearInterval(intervalId); intervalId = null; }
-    };
-
-    // Defer first check
-    const startId = setTimeout(startPolling, 3000);
-
-    const unsub = window.api.system.onVisibilityChange?.((isVisible) => {
-      if (isVisible) startPolling();
-      else stopPolling();
-    });
-
-    return () => {
-      clearTimeout(startId);
-      stopPolling();
-      if (unsub) unsub();
-    };
+    let cancelled = false;
+    window.api.game.isRunning().then(r => { if (!cancelled) setIsGameRunning(r); }).catch(() => { /* transient */ });
+    const unsub = window.api.game.onRunning?.((running) => setIsGameRunning(running));
+    return () => { cancelled = true; if (unsub) unsub(); };
   }, []);
 
   // --- UE4SS progress listener ---
@@ -112,15 +93,26 @@ export function useAppInit({ addToast, t, refreshMods }) {
   // Keep conflicts ref in sync
   useEffect(() => { conflictsRef.current = conflicts; }, [conflicts]);
 
-  // Launch state machine: idle → launching → confirmed → idle (isGameRunning takes over)
+  // Launch state machine: idle → launching → confirmed → idle (isGameRunning takes over).
+  // Promote launching → confirmed once the game process is detected.
   useEffect(() => {
     if (isGameRunning && launchState === 'launching') {
       setLaunchState('confirmed');
-      // Stay in confirmed briefly so checkmark shows at center, then reset
-      const timer = setTimeout(() => setLaunchState('idle'), 1200);
-      return () => clearTimeout(timer);
     }
   }, [isGameRunning, launchState]);
+
+  // Auto-reset the brief "confirmed" checkmark back to idle. This MUST live in
+  // its own effect keyed only on launchState. If the timer were set in the same
+  // effect that calls setLaunchState('confirmed'), that state change re-runs the
+  // effect and fires its cleanup — clearing the timer before it can fire — so
+  // launchState would stay stuck on 'confirmed' forever (UI shows "game running"
+  // even after exit, and the launch button stays disabled). Keying on launchState
+  // alone means the timer only clears when we leave 'confirmed', not on entry.
+  useEffect(() => {
+    if (launchState !== 'confirmed') return;
+    const timer = setTimeout(() => setLaunchState('idle'), 1200);
+    return () => clearTimeout(timer);
+  }, [launchState]);
 
   const handleLaunch = useCallback(async () => {
     if (!window.api || isGameRunning || launchState !== 'idle') return;

@@ -40,13 +40,19 @@ function timestamp() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-function write(level, message) {
-  ensureDir()
-  rotate()
-  // Write UTF-8 BOM on first write so Notepad can read the file correctly
+// Create the log file seeded with the UTF-8 BOM exactly once, so external
+// editors (Windows Notepad) decode CJK log lines correctly — regardless of
+// whether write() or getPath() touches the file first.
+function ensureFileWithBom() {
   if (!fs.existsSync(LOG_FILE)) {
     fs.writeFileSync(LOG_FILE, UTF8_BOM, 'utf-8')
   }
+}
+
+function write(level, message) {
+  ensureDir()
+  rotate()
+  ensureFileWithBom()
   const line = `[${timestamp()}] [${level}] ${message}\n`
   fs.appendFileSync(LOG_FILE, line, 'utf-8')
 }
@@ -66,7 +72,7 @@ const logger = {
   error: (msg) => write('ERROR', msg),
   getPath: () => {
     ensureDir()
-    if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, '', 'utf-8')
+    ensureFileWithBom()
     return LOG_FILE
   },
   readRecent

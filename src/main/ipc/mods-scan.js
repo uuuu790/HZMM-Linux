@@ -42,6 +42,23 @@ export function isUe4ssMod(modDir) {
   }
 }
 
+// Classify a recognized UE4SS mod into its subtype for UI grouping.
+// Lua-priority: if a Lua entry exists, it's a Lua mod even when a DLL is also
+// present (the DLL is treated as an auxiliary resource). Only when there's no
+// Lua entry do we look at dlls/main.dll or any first-level *.dll → cpp.
+// Mirrors isUe4ssMod's detection signals so the two never disagree.
+export function classifyUe4ssMod(modDir) {
+  const hasScripts = fs.existsSync(path.join(modDir, 'Scripts', 'main.lua'))
+  const hasMainLua = fs.existsSync(path.join(modDir, 'main.lua'))
+  if (hasScripts || hasMainLua) return 'lua'
+  const hasCppMod = fs.existsSync(path.join(modDir, 'dlls', 'main.dll'))
+  if (hasCppMod) return 'cpp'
+  try {
+    if (fs.readdirSync(modDir).some(f => f.endsWith('.dll'))) return 'cpp'
+  } catch { /* unreadable dir — fall through to default */ }
+  return 'lua' // callers should pre-gate with isUe4ssMod; default to lua otherwise
+}
+
 function isCacheValid() {
   if (!modCache.valid) return false
 
@@ -108,7 +125,11 @@ function scanMods() {
       if (BUILTIN_MODS.has(dir) || dir.startsWith('.')) continue
 
       const modDir = path.join(ue4ssModsPath, dir)
-      const stat = fs.statSync(modDir)
+      // statSync can ENOENT if a concurrent install/remove deletes this entry
+      // between readdir and here — skip it rather than aborting the whole scan
+      // (a half-scan would make getInstalledMods prune still-installed receipts).
+      let stat
+      try { stat = fs.statSync(modDir) } catch { continue }
       if (!stat.isDirectory()) continue
 
       if (!isUe4ssMod(modDir)) continue
@@ -135,6 +156,7 @@ function scanMods() {
         size: 0,
         modified: stat.mtime.toISOString(),
         type: 'UE4SS',
+        subtype: classifyUe4ssMod(modDir),
         hybrid: isHybrid,
         linkedPaks: isHybrid ? linkedPaks : undefined,
         path: modDir
@@ -150,7 +172,10 @@ function scanMods() {
 
       for (const file of files) {
         const filePath = path.join(paksPath, file)
-        const stat = fs.statSync(filePath)
+        // Skip entries that vanish mid-scan (concurrent install/remove) instead
+        // of letting one ENOENT abort the whole directory's scan.
+        let stat
+        try { stat = fs.statSync(filePath) } catch { continue }
         if (!stat.isFile()) continue
 
         const isPak = file.endsWith('.pak')

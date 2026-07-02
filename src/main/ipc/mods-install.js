@@ -8,6 +8,18 @@ import { normalizeReadme } from '../services/readme-utils.js'
 import { invalidateCache } from './mods-scan.js'
 import { syncUe4ssModRegistry } from './mods-registry.js'
 
+// Serializes the on-disk write phase of every mod mutation. installMods (this
+// file) wraps its work in this; mods.js imports it for toggle/remove. Sharing
+// ONE chain across all of them stops concurrent IPC calls (e.g. a Nexus install
+// landing while the user toggles a mod) from interleaving on the same
+// ~mods / enabled.txt / mods.json / hybrid-link files and corrupting state.
+let modWriteChain = Promise.resolve()
+function serializeModWrite(task) {
+  const next = modWriteChain.then(() => task())
+  modWriteChain = next.catch(() => {})
+  return next
+}
+
 function copyDirSync(src, dest) {
   fs.mkdirSync(dest, { recursive: true })
   const entries = fs.readdirSync(src)
@@ -103,9 +115,12 @@ function rotateModsToBackup(gamePath, mods, backupRoot) {
   return moved
 }
 
-// Put backed-up files back where they were. Removes anything currently at
-// the destination first (partial extract leftovers from the failed install).
+// Put backed-up originals back where they were (removing partial-extract
+// leftovers at the destination first). Returns the entries that FAILED to
+// restore so the caller can decide whether the backup folder is still needed —
+// a failed move means the original's only surviving copy is still in backup.
 function restoreFromBackup(moved) {
+  const failed = []
   for (const { from, to } of moved) {
     try {
       if (fs.existsSync(from)) {
@@ -115,8 +130,10 @@ function restoreFromBackup(moved) {
       moveAcrossVolume(to, from)
     } catch (err) {
       logger.error(`Rollback failed for ${from}: ${err.message}`)
+      failed.push({ from, to })
     }
   }
+  return failed
 }
 
 // Run `work` with all of `mods`' existing on-disk artifacts moved aside.
@@ -135,13 +152,72 @@ async function withRollback(gamePath, mods, work) {
     fs.rmSync(backupRoot, { recursive: true, force: true })
     return result
   } catch (err) {
-    restoreFromBackup(moved)
-    try { fs.rmSync(backupRoot, { recursive: true, force: true }) } catch { /* best-effort */ }
+    const failedRestores = restoreFromBackup(moved)
+    if (failedRestores.length === 0) {
+      try { fs.rmSync(backupRoot, { recursive: true, force: true }) } catch { /* best-effort */ }
+    } else {
+      // Some originals couldn't be put back — their only copy is still in
+      // backupRoot. Do NOT delete it (that would lose both the old version AND
+      // the failed new one); surface the location so the user can recover.
+      err.backupRetained = backupRoot
+      logger.error(`Install rollback incomplete — originals preserved at ${backupRoot}`)
+    }
     throw err
   }
 }
 
-async function installMods(filePaths, mainWindow) {
+// On startup, surface any leftover install-rollback dirs. They persist only
+// when a restore couldn't complete (originals deliberately preserved, see
+// err.backupRetained above) OR the process was hard-killed mid-install
+// (originals rotated aside, extract never finished). We do NOT auto-delete
+// recent ones — they may hold a mod's ONLY copy — but we log the location so
+// the user can recover, and sweep ones old enough (>7 days) to be abandoned.
+function cleanupStaleRollback() {
+  try {
+    const rollbackRoot = path.join(configStore.getConfigDir(), 'install-rollback')
+    if (!fs.existsSync(rollbackRoot)) return
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+    for (const name of fs.readdirSync(rollbackRoot)) {
+      const dir = path.join(rollbackRoot, name)
+      let stat
+      try { stat = fs.statSync(dir) } catch { continue }
+      if (!stat.isDirectory()) continue
+      if (Date.now() - stat.mtimeMs > WEEK_MS) {
+        try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* best-effort */ }
+        logger.info(`Swept abandoned install-rollback dir (>7d): ${dir}`)
+      } else {
+        logger.warn(`Leftover install-rollback dir may hold recoverable mod files: ${dir}`)
+      }
+    }
+  } catch (err) {
+    logger.warn(`Failed to scan install-rollback: ${err.message}`)
+  }
+}
+
+function installMods(filePaths, mainWindow) {
+  // Validate renderer-supplied paths BEFORE taking the write lock. Normal
+  // callers pass dialog / drag-drop paths or our own temp downloads, but this
+  // is a trust boundary — reject anything that isn't an absolute .zip/.rar/.pak
+  // so a compromised renderer can't copy/extract arbitrary files into the game.
+  if (!Array.isArray(filePaths) || filePaths.length === 0) {
+    throw new Error('No files provided to install')
+  }
+  for (const fp of filePaths) {
+    if (typeof fp !== 'string' || !path.isAbsolute(fp)) {
+      throw new Error(`Invalid file path: ${String(fp)}`)
+    }
+    const ext = path.extname(fp).toLowerCase()
+    if (ext !== '.zip' && ext !== '.rar' && ext !== '.pak') {
+      throw new Error(`Unsupported file type: ${path.basename(fp)}`)
+    }
+  }
+  // Serialize the on-disk write phase across ALL install paths (mods:install,
+  // Nexus install-mod/install-file, URL install) and with toggle/remove, which
+  // share this chain. Downloads run before this call, so they never hold the lock.
+  return serializeModWrite(() => installModsLocked(filePaths, mainWindow))
+}
+
+async function installModsLocked(filePaths, mainWindow) {
   const gamePath = configStore.get('gamePath')
   if (!gamePath) throw new Error('Game path not set')
 
@@ -310,4 +386,4 @@ async function installMods(filePaths, mainWindow) {
   return installed
 }
 
-export { installMods, copyDirSync, withRollback }
+export { installMods, copyDirSync, withRollback, serializeModWrite, cleanupStaleRollback }

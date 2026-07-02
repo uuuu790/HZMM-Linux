@@ -18,13 +18,16 @@ import { scanMods } from './mods-scan.js'
 // landed on disk for this install. Used later by getInstalledMods to
 // reconcile the persisted list against scanMods() — so if the user deletes
 // the mod via the Modules tab, the badge auto-clears.
-export function recordInstall(modId, fileId, localMods) {
+export function recordInstall(modId, fileId, localMods, version = null) {
   const list = configStore.get('nexusInstalledMods', [])
   const safe = Array.isArray(list) ? list.filter(e => e && e.modId !== modId) : []
   safe.push({
     modId,
     fileId: fileId || null,
     installedAt: Date.now(),
+    // Installed version string, when known (the update flow passes it through).
+    // Lets the update badge show "v1.2 -> v1.5"; absent on older receipts.
+    version: version || null,
     localMods: Array.isArray(localMods) ? localMods : [],
   })
   configStore.set('nexusInstalledMods', safe)
@@ -67,6 +70,55 @@ export function localModKey(m) {
   return null
 }
 
+// Strip a trailing `.disabled` so a toggled PAK matches its enabled name.
+// (Mirrors renderer profile-utils.normalizeFilename — kept inline so the
+// main process doesn't import renderer code.)
+function stripDisabled(filename) {
+  return typeof filename === 'string' ? filename.replace(/\.disabled$/i, '') : ''
+}
+
+// Pure reverse lookup: for each wanted (enabled) filename, find the Nexus
+// install receipt whose landed localMods include the matching on-disk mod, and
+// emit its source. Mods with no receipt (manual installs) are omitted.
+//
+// receipts: nexusInstalledMods entries. mods: scanMods() result. wantedFilenames:
+// a profile's enabledModFilenames. Returns one entry per matched filename.
+export function matchSourcesToMods(receipts, mods, wantedFilenames) {
+  if (!Array.isArray(receipts) || !Array.isArray(mods) || !Array.isArray(wantedFilenames)) return []
+  if (receipts.length === 0 || wantedFilenames.length === 0) return []
+
+  // receipt localMod key (`${modType}:${name}`) → receipt
+  const keyToReceipt = new Map()
+  for (const r of receipts) {
+    if (!r || !r.modId || !Array.isArray(r.localMods)) continue
+    for (const lm of r.localMods) {
+      if (lm && lm.name && lm.modType) keyToReceipt.set(`${lm.modType}:${lm.name}`, r)
+    }
+  }
+
+  const wanted = new Set(wantedFilenames.map(stripDisabled).filter(Boolean))
+  const out = []
+  const seen = new Set()
+  for (const m of mods) {
+    const fn = stripDisabled(m.filename)
+    if (!wanted.has(fn)) continue
+    const key = localModKey(m) // `PAK:base` / `UE4SS:folder`
+    if (!key) continue
+    const r = keyToReceipt.get(key)
+    if (!r) continue
+    if (seen.has(fn)) continue
+    seen.add(fn)
+    out.push({
+      filename: fn,
+      modId: r.modId,
+      fileId: r.fileId != null ? r.fileId : null,
+      version: r.version != null ? r.version : null,
+      displayName: m.title || m.filename,
+    })
+  }
+  return out
+}
+
 // Returns [{modId, fileId, installedAt, localMods}] — but filtered against
 // what's actually still on disk. Entries whose recorded localMods are all
 // gone get pruned (and the pruned list is persisted so subsequent reads
@@ -89,8 +141,13 @@ export function getInstalledMods() {
 
   const filtered = raw.filter(entry => {
     if (!entry) return false
-    // Legacy entry without localMods — can't verify, keep it.
-    if (!Array.isArray(entry.localMods) || entry.localMods.length === 0) return true
+    // Legacy entry (written before the localMods field existed) — the field is
+    // absent, so we genuinely can't verify it; keep it.
+    if (entry.localMods === undefined) return true
+    // Modern entry whose install landed nothing trackable (empty array) is NOT
+    // unverifiable legacy — drop it so a phantom "installed" badge for a mod
+    // with no identifiable on-disk files doesn't persist forever.
+    if (!Array.isArray(entry.localMods) || entry.localMods.length === 0) return false
     // Keep if any recorded local mod is still on disk.
     return entry.localMods.some(lm => lm && presentKeys.has(`${lm.modType}:${lm.name}`))
   })

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage, screen } from 'electron'
 import { join } from 'path'
 import windowStateKeeper from 'electron-window-state'
 
@@ -8,12 +8,15 @@ import { registerModsProfilesIpc } from './ipc/mods-profiles'
 import { registerModsReadmeIpc } from './ipc/mods-readme'
 import { registerSavesIpc } from './ipc/saves'
 import { registerUe4ssIpc } from './ipc/ue4ss'
-import { registerGameIpc } from './ipc/game'
+import { registerGameIpc, startGameRunningPolling } from './ipc/game'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerLocaleIpc } from './ipc/locale'
 import { registerAppUpdateIpc } from './ipc/app-update'
 import { registerConflictsIpc } from './ipc/conflicts'
 import { registerNexusIpc } from './ipc/nexus'
+import { registerSteamWorkshopIpc } from './ipc/steam-workshop-ipc'
+import { cleanupStaleDownloadTemp } from './ipc/mods-download'
+import { cleanupStaleRollback } from './ipc/mods-install'
 import logger from './services/logger.js'
 import configStore from './services/config-store.js'
 
@@ -27,6 +30,12 @@ const is = { dev: !app.isPackaged }
 if (process.platform === 'linux') {
   app.disableHardwareAcceleration()
 }
+
+// Single source of truth for the app icon path (dev vs packaged resource
+// layout). Linux ships a .png instead of the Windows .ico.
+const ICON_PATH = is.dev
+  ? join(__dirname, '../../resources/icon.png')
+  : join(process.resourcesPath, 'icon.png')
 
 let mainWindow
 let tray = null
@@ -43,12 +52,13 @@ function registerAllIpc(mainWindow) {
   registerModsReadmeIpc()
   registerSavesIpc(mainWindow)
   registerUe4ssIpc(mainWindow)
-  registerGameIpc(mainWindow)
+  registerGameIpc()
   registerSettingsIpc()
   registerLocaleIpc()
   registerAppUpdateIpc(mainWindow)
   registerConflictsIpc()
   registerNexusIpc(mainWindow)
+  registerSteamWorkshopIpc()
 
   // Logger IPC
   ipcMain.handle('logger:get-path', () => logger.getPath())
@@ -56,10 +66,11 @@ function registerAllIpc(mainWindow) {
 
   // Title bar overlay theme
   ipcMain.handle('app:set-titlebar-theme', (_, isDark) => {
+    const dark = isDark === true
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setTitleBarOverlay({
-        color: isDark ? '#02061700' : '#f8fafc00',
-        symbolColor: isDark ? '#94a3b8' : '#6b7280',
+        color: dark ? '#02061700' : '#f8fafc00',
+        symbolColor: dark ? '#94a3b8' : '#6b7280',
       })
     }
   })
@@ -76,7 +87,29 @@ function registerAllIpc(mainWindow) {
   })
 
   ipcMain.handle('app:set-auto-start', (_, enabled) => {
-    app.setLoginItemSettings({ openAtLogin: enabled })
+    // Coerce to a real boolean — the renderer is the trust boundary, and the
+    // sibling app:set-titlebar-theme handler applies the same `=== true` guard.
+    app.setLoginItemSettings({ openAtLogin: enabled === true })
+  })
+
+  // Grow the window just enough to fit the zoomed content, clamped to the
+  // screen work area. Grow-only: the renderer calls this after a zoom change
+  // when its content area overflows horizontally; we never shrink the window
+  // (the user can do that manually). Skipped while maximized/fullscreen.
+  ipcMain.handle('ui:fit-window', (_e, neededContentWidth) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (typeof neededContentWidth !== 'number' || !Number.isFinite(neededContentWidth)) return
+    if (mainWindow.isMaximized() || mainWindow.isFullScreen()) return
+    const { workArea } = screen.getDisplayMatching(mainWindow.getBounds())
+    const [curW, curH] = mainWindow.getContentSize()
+    const target = Math.min(Math.max(curW, Math.ceil(neededContentWidth)), workArea.width)
+    if (target <= curW + 1) return
+    mainWindow.setContentSize(target, curH)
+    // If widening pushed the window past the right edge, nudge it back in.
+    const b = mainWindow.getBounds()
+    if (b.x + b.width > workArea.x + workArea.width) {
+      mainWindow.setPosition(Math.max(workArea.x, workArea.x + workArea.width - b.width), b.y)
+    }
   })
 
   // Custom window controls — Linux has no titleBarOverlay support, so the
@@ -122,9 +155,7 @@ function createWindow() {
     // originally motivated `show: false`.
     show: true,
     backgroundColor: '#020617',
-    icon: is.dev
-      ? join(__dirname, '../../resources/icon.png')
-      : join(process.resourcesPath, 'icon.png'),
+    icon: ICON_PATH,
     frame: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -144,9 +175,7 @@ function createWindow() {
   mainWindowState.manage(mainWindow)
 
   // Force the window / taskbar / jump list to use the HZMM icon instead of electron's default
-  const windowIconPath = is.dev
-    ? join(__dirname, '../../resources/icon.png')
-    : join(process.resourcesPath, 'icon.png')
+  const windowIconPath = ICON_PATH
   console.log('[icon] using:', windowIconPath)
   try {
     const img = nativeImage.createFromPath(windowIconPath)
@@ -173,31 +202,25 @@ function createWindow() {
   // a matching splash-colored background, so the HTML splash is guaranteed
   // visible before React ever mounts.
 
-  // 捕獲渲染器錯誤
+  // 捕獲渲染器錯誤 — persist to the file logger so they survive in packaged
+  // builds (no attached console) and surface in the in-app log viewer.
   mainWindow.webContents.on('render-process-gone', (_, details) => {
-    console.error('Renderer crashed:', details.reason)
+    logger.error(`Renderer crashed: ${details.reason} (exitCode ${details.exitCode})`)
   })
 
   mainWindow.webContents.on('did-fail-load', (_, errorCode, errorDescription) => {
-    console.error('Failed to load:', errorCode, errorDescription)
+    logger.error(`Failed to load renderer: ${errorCode} ${errorDescription}`)
+  })
+
+  // Apply the saved UI zoom once the renderer has loaded (avoids a flash).
+  mainWindow.webContents.on('did-finish-load', () => {
+    const z = Number(configStore.get('uiZoom', 1))
+    if (Number.isFinite(z) && z > 0) mainWindow.webContents.setZoomFactor(z)
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
-  })
-
-  // Notify renderer of visibility changes
-  mainWindow.on('hide', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('window:visibility', false)
-    }
-  })
-
-  mainWindow.on('show', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('window:visibility', true)
-    }
   })
 
   // 關閉按鈕 → 根據設定決定最小化到系統匣或直接退出
@@ -219,6 +242,11 @@ function createWindow() {
   // Register all IPC handlers (guarded against duplicate registration)
   registerAllIpc(mainWindow)
 
+  // Game-running polling is window-scoped — (re)start it on every createWindow
+  // so a window rebuilt from the tray keeps receiving updates (registerAllIpc is
+  // one-time-guarded and won't re-bind it).
+  startGameRunningPolling(mainWindow)
+
   logger.info(`HZMM Manager started — version ${app.getVersion()}`)
 
   // Load the renderer
@@ -230,11 +258,7 @@ function createWindow() {
 }
 
 function createTray() {
-  const iconPath = is.dev
-    ? join(__dirname, '../../resources/icon.png')
-    : join(process.resourcesPath, 'icon.png')
-
-  tray = new Tray(nativeImage.createFromPath(iconPath))
+  tray = new Tray(nativeImage.createFromPath(ICON_PATH))
   tray.setToolTip('HZMM Manager')
 
   const contextMenu = Menu.buildFromTemplate([
@@ -298,6 +322,11 @@ if (!gotSingleInstanceLock) {
     if (app.getLoginItemSettings().openAtLogin) {
       app.setLoginItemSettings({ openAtLogin: true })
     }
+
+    // Sweep orphaned temp/rollback dirs left by a prior crash or hard-kill so
+    // partial downloads and abandoned rollback backups don't accumulate.
+    cleanupStaleDownloadTemp()
+    cleanupStaleRollback()
 
     createTray()
     createWindow()

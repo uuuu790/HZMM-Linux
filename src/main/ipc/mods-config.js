@@ -10,7 +10,7 @@ import fs from 'fs'
 import path from 'path'
 import configStore from '../services/config-store.js'
 import { getUe4ssModsPath } from '../services/steam-detector.js'
-import { resolveWithin, assertSafeSegment } from '../services/path-safety.js'
+import { resolveWithin, assertSafeSegment, isExecutableExt } from '../services/path-safety.js'
 import logger from '../services/logger.js'
 import { CONFIG_EXTENSIONS } from './constants.js'
 
@@ -173,8 +173,8 @@ export function registerModsConfigIpc() {
     // openPath uses the OS default association — refuse to "open" executable
     // types (a malicious mod could ship a payload alongside a config whose
     // jump-to-file button targets it). Reveal those in the folder instead.
-    const EXECUTABLE_EXTS = new Set(['.exe', '.bat', '.cmd', '.com', '.ps1', '.psm1', '.msi', '.lnk', '.scr', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.jar', '.cpl', '.reg', '.inf', '.sct', '.application'])
-    if (action === 'reveal' || EXECUTABLE_EXTS.has(path.extname(resolved).toLowerCase())) {
+    // EXECUTABLE_EXTS lives in path-safety.js as the shared source of truth.
+    if (action === 'reveal' || isExecutableExt(resolved)) {
       shell.showItemInFolder(resolved)
     } else {
       const result = shell.openPath(resolved)

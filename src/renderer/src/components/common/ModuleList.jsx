@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Trash2, CheckCircle, Power, ChevronDown, CheckSquare, Square, AlertTriangle, Pencil } from 'lucide-react';
+import { Trash2, CheckCircle, Power, ChevronDown, CheckSquare, Square, AlertTriangle, Pencil, ArrowUpCircle } from 'lucide-react';
 import { getModIcon, cleanModName } from '../../constants/modIcons';
 import ModDetailModal from '../modals/ModDetailModal';
 import GlassCard from './GlassCard';
@@ -71,11 +71,11 @@ function InlineModName({ mod, onRename }) {
   );
 }
 
-const ModuleList = ({ modules, type, title, icon: Icon, colorClass, activeModuleId, onModuleClick, onToggle, onUninstallLocal, onOpenConfig, onRenameMod, t, lang, newlyInstalledMods, selectedMods, onToggleSelect, onRangeSelect, conflictModSet }) => {
+const ModuleList = ({ modules, type, subtype, title, icon: Icon, colorClass, activeModuleId, onModuleClick, onToggle, onUninstallLocal, onOpenConfig, onRenameMod, t, lang, newlyInstalledMods, selectedMods, onToggleSelect, onRangeSelect, conflictModSet, modUpdateMap, updatingModId, onUpdateMod, nexusApiKey }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const lastClickedRef = useRef(null);
 
-  const filteredModules = modules.filter(m => m.type === type);
+  const filteredModules = modules.filter(m => m.type === type && (!subtype || m.subtype === subtype));
   if (filteredModules.length === 0) return null;
 
   const hasSelection = selectedMods && selectedMods.size > 0;
@@ -136,6 +136,12 @@ const ModuleList = ({ modules, type, title, icon: Icon, colorClass, activeModule
             const iconInfo = getModIcon(mod);
             const modKey = mod.id || mod.filename;
             const isSelected = selectedMods?.has(mod.filename);
+            const updateInfo = modUpdateMap?.get(mod.filename);
+            const updateBusy = updateInfo && updatingModId === updateInfo.modId;
+            // Badge shows the mod's concrete kind: UE4SS splits by subtype so a
+            // Lua mod reads "Lua" and a cppmod reads "C++" instead of a generic
+            // "UE4SS"; PAK keeps its own label.
+            const typeLabel = mod.type === 'UE4SS' ? (mod.subtype === 'cpp' ? 'C++' : 'Lua') : mod.type;
             return (
               <div
                 key={modKey}
@@ -164,11 +170,17 @@ const ModuleList = ({ modules, type, title, icon: Icon, colorClass, activeModule
                   <div className={`flex flex-col flex-1 min-w-0 transition-opacity duration-300 ${!mod.enabled ? 'opacity-60' : ''}`}>
                     <div className="flex items-center gap-2 mb-0.5">
                       <InlineModName mod={mod} onRename={onRenameMod} />
-                      <span className={`shrink-0 text-[11px] font-mono px-2 py-0.5 rounded-full border leading-none transition-colors duration-700 ${mod.hybrid ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800/50' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}>{mod.hybrid ? (t.hybrid || 'Hybrid') : (mod.version || mod.type)}</span>
+                      <span className={`shrink-0 text-[11px] font-mono px-2 py-0.5 rounded-full border leading-none transition-colors duration-700 ${mod.hybrid ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800/50' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}>{mod.hybrid ? (t.hybrid || 'Hybrid') : (mod.version || typeLabel)}</span>
                       {conflictModSet && conflictModSet.has(mod.filename) && (
                         <span className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50" title={t.conflictDetected || 'Conflict detected'}>
                           <AlertTriangle className="w-3.5 h-3.5" />
                           {t.conflict || 'Conflict'}
+                        </span>
+                      )}
+                      {updateInfo && (
+                        <span className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800/50" title={t.updateAvailable || 'Update available'}>
+                          <ArrowUpCircle className="w-3.5 h-3.5" />
+                          {updateInfo.currentVersion && updateInfo.latestVersion && updateInfo.currentVersion !== updateInfo.latestVersion ? `${updateInfo.currentVersion} → ${updateInfo.latestVersion}` : (t.updateAvailable || 'Update')}
                         </span>
                       )}
                     </div>
@@ -177,6 +189,17 @@ const ModuleList = ({ modules, type, title, icon: Icon, colorClass, activeModule
 
                   <div className="flex items-center gap-2 shrink-0">
                     <div className="flex items-center gap-1.5 md:gap-2">
+                      {updateInfo && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); if (!updateBusy) onUpdateMod(updateInfo); }}
+                          disabled={updateBusy}
+                          className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all duration-300 active:scale-95 bg-sky-500/10 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-400/40 dark:border-sky-500/30 ${updateBusy ? 'opacity-70 pointer-events-none' : 'hover:bg-sky-500/20 hover:border-sky-500/60 hover:-translate-y-0.5'}`}
+                          title={nexusApiKey ? (t.updateMod || 'Update') : (t.viewOnNexus || 'View on Nexus')}
+                        >
+                          <ArrowUpCircle className={`w-3 h-3 ${updateBusy ? 'animate-spin' : ''}`} />
+                          <span className="hidden sm:inline">{updateBusy ? (t.updating || 'Updating') : (nexusApiKey ? (t.updateMod || 'Update') : (t.viewOnNexus || 'Nexus'))}</span>
+                        </button>
+                      )}
                       <button
                         onClick={(e) => { e.stopPropagation(); onUninstallLocal(mod.filename); }}
                         className="p-1.5 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/20 transition-all duration-300 hover:scale-110 active:scale-95"

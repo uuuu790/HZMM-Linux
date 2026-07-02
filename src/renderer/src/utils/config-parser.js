@@ -9,6 +9,17 @@
 //
 // Extracted from ConfigEditorModal.jsx as part of the 672-line split.
 
+// A "user-editable" config file: not the mod's entry-point main.lua and not an
+// internal scripts/ file. Shared by ModDetailModal (decides whether to show the
+// "Edit config" button) and ConfigEditorModal (which files to load) so the two
+// can't drift.
+export function isUserConfigFile(f) {
+  return (
+    f.name.toLowerCase() !== 'main.lua' &&
+    !f.relativePath.toLowerCase().startsWith('scripts/')
+  );
+}
+
 // i18n helper: resolve localized string from { en: "...", "zh-TW": "..." } objects
 export function resolveI18n(obj, lang) {
   if (!obj || typeof obj === 'string') return obj || '';
@@ -97,16 +108,19 @@ export function parseConfigFile(text) {
     }
 
     // key = value（通用，支援 INI 和 Lua）
-    const kvMatch = trimmed.match(/^(\w+)\s*=\s*(.+?),?\s*$/);
+    // 抓等號後「整段」原始值，再依序拆 inline comment → 尾逗號 → 引號。
+    // 順序很重要：先拆註解才能正確判斷逗號與引號，否則像
+    // `Name = "AK47", -- gun` 會把逗號/引號留在 value 裡，round-trip 損壞。
+    const kvMatch = trimmed.match(/^(\w+)\s*=\s*(.+)$/);
     if (kvMatch) {
       let value = kvMatch[2].trim();
-      if (value.endsWith(',')) value = value.slice(0, -1).trim();
 
-      // 提取行內註解 (-- comment)，保留原始尾段以便存回。
-      // 注意：偵測 `--` 時要 skip 引號內部，否則像 `Desc = "TODO -- fix"`
-      // 會把 `--` 誤認為註解、把 value 切成 `"TODO`、round-trip 後損壞。
+      // 1. 先提取行內註解 (-- comment)。findInlineCommentStart 會 skip 引號
+      //    內部（避免 `Desc = "TODO -- fix"` 被誤切），並回傳 `--` 前空白的
+      //    位置，故 trailing 自帶一個前導空白、round-trip 不掉格式。
       let inlineDesc = null;
       let trailing = '';
+      let hadComma = false;
       const dashIdx = findInlineCommentStart(value);
       if (dashIdx !== -1) {
         trailing = value.slice(dashIdx);
@@ -115,12 +129,18 @@ export function parseConfigFile(text) {
         inlineDesc = descText.replace(/^\d+\s*[-–—]\s*/, '').trim() || null;
       }
 
-      // 去掉引號取裸值
+      // 2. 再去尾逗號（Lua 慣例），記錄 hadComma 以便存回時還原。
+      if (value.endsWith(',')) {
+        value = value.slice(0, -1).trim();
+        hadComma = true;
+      }
+
+      // 3. 最後判斷引號、取裸值。
       const isQuoted = (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"));
       const bareValue = isQuoted ? value.slice(1, -1) : value;
-      // 判斷原始格式（有逗號結尾或在 Lua 結構內 → lua）
-      const isLua = line.match(/,\s*$/) || text.includes('--[[');
-      entries.push({ type: 'keyval', raw: line, key: kvMatch[1], value: bareValue, isQuoted, format: isLua ? 'lua' : 'ini', inlineDesc, trailing });
+      // 有尾逗號或塊註解 → 視為 Lua 格式。
+      const isLua = hadComma || text.includes('--[[');
+      entries.push({ type: 'keyval', raw: line, key: kvMatch[1], value: bareValue, isQuoted, format: isLua ? 'lua' : 'ini', inlineDesc, trailing, hadComma });
       continue;
     }
 
@@ -136,7 +156,9 @@ export function serializeConfig(entries) {
     if (e.type === 'keyval') {
       const indent = e.raw.match(/^(\s*)/)?.[1] || '';
       const val = e.isQuoted ? `"${e.value}"` : e.value;
-      const comma = e.format === 'lua' && e.raw.match(/,\s*$/) ? ',' : '';
+      // 從 parse 時記錄的 hadComma 還原尾逗號 — 不能再靠 e.raw 結尾判斷，
+      // 因為有 inline comment 時原始行結尾是註解而非逗號（會誤掉逗號）。
+      const comma = e.hadComma ? ',' : '';
       const trail = e.trailing || '';
       return `${indent}${e.key} = ${val}${comma}${trail}`;
     }
@@ -181,6 +203,8 @@ export function appendKeyval(entries, key, value, options = {}) {
     value: valueStr,
     isQuoted,
     format,
+    // serialize 改用 hadComma 還原逗號，故新增 entry 也要設（lua → 有逗號）。
+    hadComma: format === 'lua',
     inlineDesc: null,
     trailing: '',
   };

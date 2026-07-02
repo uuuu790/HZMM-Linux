@@ -31,6 +31,7 @@ function syncUe4ssModRegistry(ue4ssModsPath, modName, enabled) {
   if (fs.existsSync(modsJsonPath)) {
     try {
       const mods = JSON.parse(fs.readFileSync(modsJsonPath, 'utf-8'))
+      if (!Array.isArray(mods)) { logger.warn('mods.json is not an array, skipping sync'); return }
       const existing = mods.find(m => m.mod_name === modName)
       if (existing) {
         existing.mod_enabled = enabled
@@ -59,6 +60,7 @@ function removeFromUe4ssModRegistry(ue4ssModsPath, modName) {
   if (fs.existsSync(modsJsonPath)) {
     try {
       const mods = JSON.parse(fs.readFileSync(modsJsonPath, 'utf-8'))
+      if (!Array.isArray(mods)) { logger.warn('mods.json is not an array, skipping remove'); return }
       const filtered = mods.filter(m => m.mod_name !== modName)
       fs.writeFileSync(modsJsonPath, JSON.stringify(filtered, null, 4), 'utf-8')
     } catch (err) { logger.warn(`Failed to remove from mods.json: ${err.message}`) }

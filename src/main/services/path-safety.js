@@ -1,5 +1,20 @@
 import path from 'path'
 
+// Extensions whose OS default association EXECUTES the file rather than opening
+// it for viewing. shell.openPath on any of these runs a payload, so any IPC
+// "open this file" handler must reveal them in the folder instead. A malicious
+// mod can drop such a file anywhere under the game directory, so this is the
+// single source of truth shared by every openPath handler.
+export const EXECUTABLE_EXTS = new Set([
+  '.exe', '.bat', '.cmd', '.com', '.ps1', '.psm1', '.msi', '.lnk', '.scr',
+  '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.jar', '.cpl',
+  '.reg', '.inf', '.sct', '.application'
+])
+
+export function isExecutableExt(filePath) {
+  return EXECUTABLE_EXTS.has(path.extname(filePath).toLowerCase())
+}
+
 // Reject any name that is not a flat single path segment. Used at the
 // top of IPC handlers that take a mod filename / folder name from the
 // renderer before passing it to fs APIs. Intentionally stricter than

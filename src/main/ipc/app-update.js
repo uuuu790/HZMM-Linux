@@ -57,7 +57,8 @@ function registerAppUpdateIpc(_mainWindow) {
   // the new AppImage/deb. Deliberately NOT an executable swap — no temp-file
   // copy, no PORTABLE_EXECUTABLE_FILE, no relaunch, no rollback (all of which
   // are Windows-portable-only). The channel name matches Windows so the shared
-  // "Install" button works; the behavior is Linux's manual download.
+  // "Install" button works; the behavior is Linux's manual download. Upstream
+  // v1.5.0's install-in-flight guard is not needed: opening a URL is idempotent.
   ipcMain.handle('app-update:install', async () => {
     logger.info(`Opening releases page for manual download: ${RELEASES_URL}`)
     await shell.openExternal(RELEASES_URL)

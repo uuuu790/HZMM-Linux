@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Globe, ChevronDown, ExternalLink, Minus, Square, X } from 'lucide-react';
+import { Globe, ChevronDown, Minus, Square, X } from 'lucide-react';
 
 // Linux has no titleBarOverlay support — the BrowserWindow runs with
 // frame: false but Electron can't synthesize OS-style close/min/max
@@ -37,6 +37,7 @@ export default function AppHeader({
     activeTab === 'dashboard' ? t.dashboard :
     activeTab === 'profiles' ? t.profiles :
     activeTab === 'nexus' ? (t.nexus || 'Nexus') :
+    activeTab === 'steamWorkshop' ? t.steamWorkshop :
     t.settings;
 
   return (
@@ -55,13 +56,6 @@ export default function AppHeader({
       </h2>
 
       <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
-        <button
-          onClick={() => window.api?.system?.openExternal('https://www.nexusmods.com/humanitz/mods')}
-          className="flex items-center gap-2 bg-white/60 dark:bg-slate-800/60 backdrop-blur-md px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-[var(--accent-50)] dark:hover:bg-[rgba(var(--accent-rgb),0.2)] hover:border-[var(--accent-300)] dark:hover:border-[var(--accent-700)] transition-all hover:scale-105 hover:shadow-md active:scale-95 text-slate-600 dark:text-slate-300 font-bold text-sm cursor-pointer duration-300"
-        >
-          <ExternalLink className="w-4 h-4" style={{ color: 'var(--accent-500)' }} />
-          <span className="hidden sm:inline">Nexus Mods</span>
-        </button>
         <div className="relative" ref={langDropdownRef}>
           <button
             onClick={() => setLangDropdownOpen(prev => !prev)}

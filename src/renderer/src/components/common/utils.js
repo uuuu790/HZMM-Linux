@@ -5,3 +5,15 @@ export function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
+
+export function formatCount(n) {
+  if (n == null || isNaN(n)) return '—'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`
+  return String(n)
+}
+
+export function formatDate(unixSeconds) {
+  if (!unixSeconds) return '—'
+  return new Date(unixSeconds * 1000).toLocaleDateString()
+}

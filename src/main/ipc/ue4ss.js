@@ -5,6 +5,7 @@ import configStore from '../services/config-store.js'
 import logger from '../services/logger.js'
 import { getLatestRelease, downloadRelease } from '../services/github-release.js'
 import { extractZipRaw } from '../services/archive.js'
+import { resolveWithin } from '../services/path-safety.js'
 
 function getBinariesPath() {
   const gamePath = configStore.get('gamePath')
@@ -44,28 +45,47 @@ function checkUe4ssStatus() {
   return { status: 'installed', version: installedVersion, structure }
 }
 
-function cleanUe4ssFiles(binPath) {
-  // 清理已知的 UE4SS 檔案，避免舊版本殘留
+// Move (not delete) the existing UE4SS core files into backupDir so a failed
+// extract can roll back to a working install instead of a half-deleted mess.
+// Mirrors the old "keep the user's Mods folder" rule. Backup lives next to the
+// install (same volume) so renameSync never hits EXDEV. Returns moved {from,to}.
+function rotateUe4ssToBackup(binPath, backupDir) {
+  const moved = []
+  const stash = (from, key) => {
+    const to = path.join(backupDir, key)
+    fs.mkdirSync(path.dirname(to), { recursive: true })
+    fs.renameSync(from, to)
+    moved.push({ from, to })
+  }
   const knownFiles = ['dwmapi.dll', 'UE4SS.dll', 'UE4SS-settings.ini']
   for (const file of knownFiles) {
     const filePath = path.join(binPath, file)
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    if (fs.existsSync(filePath)) stash(filePath, file)
   }
-  // 清理 ue4ss 子目錄（experimental 結構）
+  // experimental structure: ue4ss/ subdir — rotate everything except the
+  // user's Mods folder.
   const ue4ssSubDir = path.join(binPath, 'ue4ss')
   if (fs.existsSync(ue4ssSubDir)) {
-    // 保留 Mods 資料夾（使用者的 mod 不能刪）
-    const _modsDir = path.join(ue4ssSubDir, 'Mods')
-    const entries = fs.readdirSync(ue4ssSubDir)
-    for (const entry of entries) {
+    for (const entry of fs.readdirSync(ue4ssSubDir)) {
       if (entry === 'Mods') continue
-      const entryPath = path.join(ue4ssSubDir, entry)
-      const stat = fs.statSync(entryPath)
-      if (stat.isDirectory()) {
-        fs.rmSync(entryPath, { recursive: true, force: true })
-      } else {
-        fs.unlinkSync(entryPath)
+      stash(path.join(ue4ssSubDir, entry), path.join('ue4ss', entry))
+    }
+  }
+  return moved
+}
+
+// Put rotated core files back after a failed extract.
+function restoreUe4ssBackup(moved) {
+  for (const { from, to } of moved) {
+    try {
+      if (fs.existsSync(from)) {
+        if (fs.statSync(from).isDirectory()) fs.rmSync(from, { recursive: true, force: true })
+        else fs.unlinkSync(from)
       }
+      fs.mkdirSync(path.dirname(from), { recursive: true })
+      fs.renameSync(to, from)
+    } catch (err) {
+      logger.warn(`UE4SS rollback failed for ${from}: ${err.message}`)
     }
   }
 }
@@ -80,15 +100,24 @@ function snapshotUserSettings(installPath) {
   for (const rel of UE4SS_SETTINGS_RELATIVE_PATHS) {
     const full = path.join(installPath, rel)
     if (fs.existsSync(full)) {
-      try { saved.push({ path: full, content: fs.readFileSync(full) }) } catch { /* unreadable */ }
+      // Keep installPath + the relative path (not just the absolute target) so
+      // restoreUserSettings can re-derive the write target under resolveWithin
+      // rather than trusting a stored absolute path.
+      try { saved.push({ installPath, rel, content: fs.readFileSync(full) }) } catch { /* unreadable */ }
     }
   }
   return saved
 }
 
 function restoreUserSettings(saved) {
-  for (const { path: full, content } of saved) {
+  for (const { installPath, rel, content } of saved) {
     try {
+      // Re-resolve the write target under the path guard. The rel paths come
+      // from UE4SS_SETTINGS_RELATIVE_PATHS (not renderer input), so this is
+      // defense-in-depth: it keeps the "writes stay inside installPath"
+      // invariant explicit and refactor-proof rather than trusting a stored
+      // absolute path.
+      const full = resolveWithin(installPath, rel)
       fs.mkdirSync(path.dirname(full), { recursive: true })
       fs.writeFileSync(full, content)
       logger.info(`Preserved UE4SS-settings.ini at ${full}`)
@@ -151,16 +180,27 @@ async function doInstall(mainWindow) {
       }
     })
 
-    // Capture user-customized UE4SS-settings.ini BEFORE clean + extract.
-    // cleanUe4ssFiles unlinks it directly, and even if it didn't, the
-    // archive's fresh settings.ini would overwrite during extract.
+    // Capture user-customized UE4SS-settings.ini BEFORE rotate + extract.
+    // The settings file is rotated aside with the rest, and the archive's fresh
+    // settings.ini would overwrite during extract — so re-apply it afterwards.
     const savedSettings = snapshotUserSettings(installPath)
 
-    // 清理舊版本檔案（保留使用者 Mods）
-    cleanUe4ssFiles(installPath)
-
-    // Extract to game directory (不走 mod 分析，直接全部解壓)
-    await extractZipRaw(tempZip, installPath)
+    // Rotate old core files aside (keeping the user's Mods) instead of deleting,
+    // so a failed extract rolls back to the working install rather than leaving
+    // UE4SS half-deleted and unloadable.
+    const backupDir = path.join(installPath, '_hzmm_ue4ss_backup')
+    fs.rmSync(backupDir, { recursive: true, force: true })
+    fs.mkdirSync(backupDir, { recursive: true })
+    let rotated = []
+    try {
+      rotated = rotateUe4ssToBackup(installPath, backupDir)
+      // Extract to game directory (不走 mod 分析，直接全部解壓)
+      await extractZipRaw(tempZip, installPath)
+    } catch (err) {
+      restoreUe4ssBackup(rotated)
+      throw err
+    }
+    fs.rmSync(backupDir, { recursive: true, force: true })
 
     // Put user's settings back (overwriting freshly-extracted defaults) at
     // their original layout location, then flatten — so the restored ini is

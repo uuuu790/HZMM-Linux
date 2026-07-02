@@ -14,6 +14,51 @@ import logger from '../services/logger.js'
 // the conflict-collection logic itself doesn't depend on file format.
 //
 // Returns: `[{ resource: string, mods: string[] }]` (only entries with >1 mod).
+//
+// readPakIndex does a synchronous footer read + full index parse on the main
+// thread, so unchanged paks are cached by path+mtime+size to keep repeat scans
+// cheap.
+//
+// The cache value is a PAK's full resource-path list (up to 1M strings — see
+// pak-parser.js), so it's bounded two ways to stay flat over a long
+// tray-resident session: (1) a per-path sweep drops a PAK's stale entries when
+// it's rebuilt in place (new mtime/size → new key), keeping at most one entry
+// per path; (2) an LRU cap evicts the oldest once distinct paths pile up.
+// Mirrors the bounded-cache pattern in nexus-cache.js.
+//
+// Exposed as a factory with an injectable `read` so the bounding logic is
+// unit-testable without real PAK binaries; production uses one shared instance
+// backed by the real synchronous parser.
+export const MAX_PAK_CACHE = 256
+
+export function createPakIndexCache(read = readPakIndex) {
+  const cache = new Map()
+  return function readCached(filePath, stat) {
+    const key = `${filePath}:${stat.mtimeMs}:${stat.size}`
+    const hit = cache.get(key)
+    if (hit) return hit
+
+    const entries = read(filePath)
+
+    // Same PAK, changed on disk → its previous index is dead weight. Drop any
+    // entry sharing this path before inserting the fresh one.
+    const prefix = `${filePath}:`
+    for (const k of cache.keys()) {
+      if (k.startsWith(prefix)) cache.delete(k)
+    }
+    // LRU cap: Map preserves insertion order, so the first key is the oldest.
+    if (cache.size >= MAX_PAK_CACHE) {
+      const oldest = cache.keys().next().value
+      if (oldest !== undefined) cache.delete(oldest)
+    }
+
+    cache.set(key, entries)
+    return entries
+  }
+}
+
+const defaultPakIndexCache = createPakIndexCache()
+
 export function findConflicts(paksPaths, readIndex = readPakIndex) {
   const modResources = new Map()
 
@@ -30,7 +75,9 @@ export function findConflicts(paksPaths, readIndex = readPakIndex) {
       const stat = fs.statSync(filePath)
       if (!stat.isFile()) continue
 
-      const entries = readIndex(filePath)
+      const entries = readIndex === readPakIndex
+        ? defaultPakIndexCache(filePath, stat)
+        : readIndex(filePath)
       for (const entry of entries) {
         if (!modResources.has(entry)) {
           modResources.set(entry, [])

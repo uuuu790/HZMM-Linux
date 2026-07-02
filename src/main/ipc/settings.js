@@ -1,19 +1,22 @@
 import { ipcMain, dialog, shell } from 'electron'
 import path from 'path'
 import configStore from '../services/config-store.js'
+import { isExecutableExt } from '../services/path-safety.js'
 
-// NOTE: `language` was previously here but never read — language preference
-// is stored under `lang` via locale:set-preference. Removed to prevent
-// renderers from writing a dead key.
+// NOTE: several keys were removed after being confirmed unread across main +
+// renderer: `language` (now `lang` via locale:set-preference), `theme`
+// (superseded by `themeId`), `autoCheckUpdate`, `modSortOrder`,
+// `modSortDirection`, and `lastTab`. Keeping the whitelist tight stops the
+// renderer writing dead keys to the config file.
 // Exported so unit tests can verify the whitelist directly without spinning
 // up Electron / the IPC handler.
 export const ALLOWED_SETTINGS_KEYS = new Set([
-  'gamePath', 'theme', 'themeId', 'darkMode', 'minimizeToTray',
-  'nexusApiKey', 'ue4ssVersion', 'autoCheckUpdate',
-  'modSortOrder', 'modSortDirection', 'lastTab', 'windowState',
+  'gamePath', 'themeId', 'darkMode', 'minimizeToTray',
+  'nexusApiKey', 'ue4ssVersion', 'windowState',
   'profiles', 'activeProfileId',
   'nexusInstalledMods',
   'skipInstallPreview',
+  'uiZoom',
 ])
 
 function registerSettingsIpc() {
@@ -66,7 +69,13 @@ function registerSettingsIpc() {
     const isAllowed = allowed.some(dir => resolved === dir || resolved.startsWith(dir + path.sep))
     if (!isAllowed) return
 
-    // Use OS default association instead of hardcoding notepad.exe.
+    // openPath uses the OS default association, which EXECUTES .exe/.bat/etc.
+    // A malicious mod can drop such a file under the game dir, so reveal those
+    // in the folder instead of running them. (Mirrors mods-config's open-path.)
+    if (isExecutableExt(resolved)) {
+      shell.showItemInFolder(resolved)
+      return ''
+    }
     // Returns an error string on failure, empty string on success.
     return shell.openPath(resolved)
   })

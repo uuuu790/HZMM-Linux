@@ -15,7 +15,7 @@ function formatCount(n) {
 //   'none'  — no per-card animation (used when the parent layer handles the
 //             fade itself, so we don't double up animations and fight over
 //             opacity transitions mid-crossfade)
-function NexusModCardImpl({ mod, t, onClick, onQuickInstall, installing, installingAny, installed, index = 0, entrance = 'slide', selfMod = false }) {
+function NexusModCardImpl({ mod, t, onClick, onQuickInstall, installing, installingAny, installed, index = 0, entrance = 'slide', selfMod = false, progress = null }) {
   // Brief "just installed" flash — mirror the installing prop going
   // true → false, then clear the green check after ~1.5s so the next
   // install session isn't still greeted with success state.
@@ -178,7 +178,7 @@ function NexusModCardImpl({ mod, t, onClick, onQuickInstall, installing, install
                 {justDone
                   ? t.nexusInstalledToast
                   : installing
-                  ? t.nexusInstalling
+                  ? (progress != null ? `${progress}%` : t.nexusInstalling)
                   : installed
                   ? t.nexusInstalledLabel
                   : t.nexusInstall}
@@ -201,6 +201,7 @@ export default memo(NexusModCardImpl, (prev, next) => (
   prev.t === next.t &&
   prev.installing === next.installing &&
   prev.installingAny === next.installingAny &&
+  prev.progress === next.progress &&
   prev.installed === next.installed &&
   prev.index === next.index &&
   prev.entrance === next.entrance &&

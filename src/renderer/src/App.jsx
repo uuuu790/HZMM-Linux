@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import appIcon from './assets/icon.png';
+import { clampZoom, stepZoom, ZOOM_STEP } from './utils/zoom';
 
 // Constants
 import { UI_TEXT } from './constants/i18n';
@@ -27,6 +28,7 @@ const ModulesTab = lazy(() => import('./components/tabs/ModulesTab'));
 const ProfilesTab = lazy(() => import('./components/tabs/ProfilesTab'));
 const SettingsTab = lazy(() => import('./components/tabs/SettingsTab'));
 const NexusTab = lazy(() => import('./components/tabs/NexusTab'));
+const SteamWorkshopTab = lazy(() => import('./components/tabs/SteamWorkshopTab'));
 
 // Hooks
 import { useToast } from './hooks/useToast';
@@ -37,6 +39,7 @@ import { useBackupHandlers } from './hooks/useBackupHandlers';
 import { useProfileHandlers } from './hooks/useProfileHandlers';
 import { useUpdateHandlers } from './hooks/useUpdateHandlers';
 import { useAppInit } from './hooks/useAppInit';
+import { useUpdateChecker } from './hooks/useUpdateChecker';
 
 // ==========================================
 // Main App Component
@@ -52,6 +55,9 @@ export default function App() {
   const [minimizeToTray, setMinimizeToTray] = useState(true);
   const [autoStart, setAutoStart] = useState(false);
 
+  // --- UI Zoom ---
+  const [uiZoom, setUiZoom] = useState(1);
+
   // --- Install preview toggle ---
   // Power users / mod authors who install the same archive repeatedly find
   // the preview dialog redundant. When true, handleInstallWithPreview skips
@@ -65,7 +71,7 @@ export default function App() {
   // --- Tab ---
   const [activeTab, setActiveTab] = useState('dashboard');
   const prevTabRef = useRef('dashboard');
-  const tabOrder = ['dashboard', 'modules', 'nexus', 'profiles', 'settings'];
+  const tabOrder = ['dashboard', 'modules', 'profiles', 'nexus', 'steamWorkshop', 'settings'];
 
   // --- Config Editor ---
   const [configEditorMod, setConfigEditorMod] = useState(null);
@@ -117,6 +123,23 @@ export default function App() {
     persistSetting('skipInstallPreview', enabled);
   }, [persistSetting]);
 
+  const handleSetUiZoom = useCallback((factor) => {
+    const z = clampZoom(factor);
+    setUiZoom(z);
+    window.api?.ui?.setZoom?.(z);
+    persistSetting('uiZoom', z);
+    // After zoom + reflow, if the content area overflows horizontally, ask main
+    // to grow the window just enough to fit it (main clamps to the screen,
+    // grows only). The horizontal scroll stays as a fallback past screen width.
+    requestAnimationFrame(() => {
+      const area = scrollAreaRef.current;
+      if (area && area.scrollWidth > area.clientWidth + 1) {
+        const neededInner = window.innerWidth + (area.scrollWidth - area.clientWidth);
+        window.api?.ui?.fitWindow?.(Math.ceil(neededInner * z));
+      }
+    });
+  }, [persistSetting]);
+
   // ==========================================
   // Domain Hooks
   // ==========================================
@@ -125,7 +148,7 @@ export default function App() {
     appVersion, updateState, updateInfo, updateProgress, isUpdating,
     handleCheckUpdate, handleDownloadUpdate, handleInstallUpdate,
     initVersion,
-  } = useUpdateHandlers({ addToast, t });
+  } = useUpdateHandlers();
 
   const [isGameRunningProxy, setIsGameRunningProxy] = useState(false);
 
@@ -189,6 +212,17 @@ export default function App() {
     initGame,
   } = useAppInit({ addToast, t, refreshMods });
 
+  const {
+    updateMap: modUpdateMap, updateCount: modUpdateCount, updatingModId, handleUpdateMod, runCheck: recheckUpdates,
+  } = useUpdateChecker({ nexusApiKey, addToast, t, refreshMods });
+
+  // "Rescan mods" also force-rechecks Nexus updates past the 6h throttle, giving
+  // the user a manual way to refresh the update badges after the verdict changes.
+  const handleRescanAndRecheck = useCallback(async () => {
+    await handleRescan();
+    recheckUpdates(true);
+  }, [handleRescan, recheckUpdates]);
+
   useEffect(() => {
     setIsGameRunningProxy(isGameRunning);
   }, [isGameRunning]);
@@ -207,7 +241,9 @@ export default function App() {
     newProfileName, setNewProfileName,
     applyingProfileId,
     handleCreateProfile, handleApplyProfile, handleDeleteProfile,
-    handleExportProfile: _handleExportProfile, handleImportProfile: _handleImportProfile,
+    handleExportProfile, handleImportProfile,
+    importModal, importDownloading, importProgress,
+    importDownloadAndApply, importApplyAnyway, closeImportModal,
     initProfiles,
   } = useProfileHandlers({ addToast, showConfirm, closeConfirm, t, modules, persistSetting, refreshMods });
 
@@ -253,6 +289,7 @@ export default function App() {
         window.api.settings.get('themeId', 'ember').then(v => setThemeId(v)),
         window.api.settings.get('minimizeToTray', true).then(v => setMinimizeToTray(v)),
         window.api.settings.get('skipInstallPreview', false).then(v => setSkipInstallPreview(!!v)),
+        window.api.settings.get('uiZoom', 1).then(v => setUiZoom(clampZoom(v))),
         window.api.system.getAutoStart().then(v => setAutoStart(v)).catch(() => {}),
         initProfiles(),
         initGame(),
@@ -303,6 +340,17 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === '=' || e.key === '+') { e.preventDefault(); handleSetUiZoom(stepZoom(uiZoom, ZOOM_STEP)); }
+      else if (e.key === '-' || e.key === '_') { e.preventDefault(); handleSetUiZoom(stepZoom(uiZoom, -ZOOM_STEP)); }
+      else if (e.key === '0') { e.preventDefault(); handleSetUiZoom(1); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [uiZoom, handleSetUiZoom]);
+
   const changeLang = useCallback((code) => {
     setLang(code);
     setLangDropdownOpen(false);
@@ -350,6 +398,7 @@ export default function App() {
         isGameRunning={isGameRunning} launchState={launchState} gameVersion={gameVersion}
         handleLaunch={handleLaunch} appVersion={appVersion}
         updateState={updateState} updateInfo={updateInfo}
+        modUpdateCount={modUpdateCount}
       />
 
       {/* ============ Main Content ============ */}
@@ -376,10 +425,10 @@ export default function App() {
         <div
           ref={scrollAreaRef}
           onScroll={handleContentScroll}
-          className="scroll-fade-thumb flex-1 w-full overflow-y-auto scroll-smooth flex flex-col items-center px-4 md:px-8 pb-12"
+          className="scroll-fade-thumb flex-1 w-full overflow-auto scroll-smooth flex flex-col px-4 md:px-8 pb-12"
         >
         <main
-          className={`tab-width-spring w-full flex-1 relative z-10 ${activeTab === 'nexus' ? 'max-w-[1600px]' : 'max-w-6xl'}`}
+          className={`tab-width-spring w-full flex-1 mx-auto relative z-10 ${activeTab === 'nexus' ? 'max-w-[1600px]' : 'max-w-6xl'}`}
         >
           <div key={activeTab} className={tabOrder.indexOf(activeTab) >= tabOrder.indexOf(prevTabRef.current) ? 'animate-tab-left' : 'animate-tab-right'}>
 
@@ -418,7 +467,11 @@ export default function App() {
               isGameRunning={isGameRunning}
               conflicts={conflicts}
               isDark={isDark}
-              handleRescan={handleRescan} rescanning={rescanning}
+              handleRescan={handleRescanAndRecheck} rescanning={rescanning}
+              modUpdateMap={modUpdateMap}
+              updatingModId={updatingModId}
+              onUpdateMod={handleUpdateMod}
+              nexusApiKey={nexusApiKey}
             />
             </Suspense>
           )}
@@ -433,6 +486,12 @@ export default function App() {
             </Suspense>
           )}
 
+          {import.meta.env.DEV && activeTab === 'steamWorkshop' && (
+            <Suspense fallback={<Spinner />}>
+            <SteamWorkshopTab t={t} />
+            </Suspense>
+          )}
+
           {activeTab === 'profiles' && (
             <Suspense fallback={<Spinner />}>
             <ProfilesTab
@@ -442,7 +501,15 @@ export default function App() {
               handleCreateProfile={handleCreateProfile}
               handleApplyProfile={handleApplyProfile}
               handleDeleteProfile={handleDeleteProfile}
+              handleExportProfile={handleExportProfile}
+              handleImportProfile={handleImportProfile}
               applyingProfileId={applyingProfileId}
+              importModal={importModal}
+              importDownloading={importDownloading}
+              importProgress={importProgress}
+              importDownloadAndApply={importDownloadAndApply}
+              importApplyAnyway={importApplyAnyway}
+              closeImportModal={closeImportModal}
             />
             </Suspense>
           )}
@@ -473,6 +540,8 @@ export default function App() {
               handleSetAutoStart={handleSetAutoStart}
               skipInstallPreview={skipInstallPreview}
               handleSetSkipInstallPreview={handleSetSkipInstallPreview}
+              uiZoom={uiZoom}
+              handleSetUiZoom={handleSetUiZoom}
             />
             </Suspense>
           )}

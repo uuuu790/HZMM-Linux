@@ -45,10 +45,6 @@ function registerLocaleIpc() {
     return SUPPORTED_LOCALES
   })
 
-  ipcMain.handle('locale:detect', () => {
-    return detectLocale()
-  })
-
   ipcMain.handle('locale:get-preference', () => {
     const saved = configStore.get('lang')
     if (saved && SUPPORTED_CODES.has(saved)) return saved

@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react'
 import { Save, X, RefreshCw, Check } from 'lucide-react'
+import { useEscapeKey } from '../../hooks/useEscapeKey'
 import { formatBytes } from '../common/utils'
 
 const WorldSelectModal = ({ isOpen, onClose, worlds, loading, onConfirm, t }) => {
+  useEscapeKey(onClose, isOpen)
   const [selectedWorlds, setSelectedWorlds] = useState(() => new Set())
 
   // Reset selection when worlds change (all selected by default)
@@ -49,15 +51,21 @@ const WorldSelectModal = ({ isOpen, onClose, worlds, loading, onConfirm, t }) =>
         className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-zoom-in"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="world-select-modal-title"
+        className="relative w-full max-w-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/60 dark:border-slate-700/50">
-          <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+          <h3 id="world-select-modal-title" className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <Save className="w-5 h-5" style={{ color: 'var(--accent-500)' }} />
             {t.backupSelectWorlds || 'Select Worlds to Backup'}
           </h3>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
           >
             <X className="w-4 h-4" />

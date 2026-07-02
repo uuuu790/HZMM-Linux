@@ -1,15 +1,42 @@
 @import "tailwindcss";
-@import "@fontsource-variable/inter/wght.css";
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* The Linux build bundles Inter so the UI matches the Windows build's Segoe UI
-   metrics. Without it, `system-ui` falls back to DejaVu/Liberation Sans, which
-   is wider and heavier — that's what made the whole UI look "off" vs Windows
+/* The Linux build bundles Selawik — Microsoft's open (SIL OFL) metric-
+   compatible replacement for Segoe UI — so the UI matches the Windows build.
+   Without it, `system-ui` falls back to DejaVu/Liberation Sans, which is
+   wider and heavier — that's what made the whole UI look "off" vs Windows
    and overflowed the sidebar launch button ("Game Running" → "Game Ru…").
-   Inter has no CJK glyphs, so 中文/日本語/한국어 fall through to the system CJK
-   font here — same behavior as Segoe UI on Windows. */
+   Same weight set as Segoe UI (no 900 — font-black synthesizes from Bold,
+   exactly like Windows). Selawik is Latin-only, so 中文/日本語/한국어 fall
+   through to the system CJK font — same behavior as Segoe UI on Windows. */
+@font-face {
+  font-family: "Selawik";
+  font-weight: 300;
+  src: url("./assets/fonts/selawik/selawkl.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Selawik";
+  font-weight: 350;
+  src: url("./assets/fonts/selawik/selawksl.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Selawik";
+  font-weight: 400;
+  src: url("./assets/fonts/selawik/selawk.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Selawik";
+  font-weight: 600;
+  src: url("./assets/fonts/selawik/selawksb.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Selawik";
+  font-weight: 700;
+  src: url("./assets/fonts/selawik/selawkb.woff2") format("woff2");
+}
+
 @theme {
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+  --font-sans: "Selawik", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     "Noto Sans", "Noto Sans CJK TC", "Microsoft JhengHei", sans-serif;
 }
 

@@ -144,6 +144,12 @@ function flattenUe4ssLayout(binPath) {
     const src = path.join(ue4ssDir, entry)
     const dest = path.join(binPath, entry)
 
+    // UE4SS-settings.ini: an existing root copy is the user's restored
+    // settings (restoreUserSettings runs before flatten, and a previously
+    // flattened install keeps them at Win64/UE4SS-settings.ini) — keep it and
+    // leave the archive default in ue4ss/ instead of clobbering.
+    if (entry === 'UE4SS-settings.ini' && fs.existsSync(dest)) continue
+
     // Conflict guard: never overwrite a proxy DLL or existing file in Win64/.
     // If the release ever stops needing flattening this also prevents
     // re-flattening from clobbering hand-placed files.
@@ -203,8 +209,10 @@ async function doInstall(mainWindow) {
     fs.rmSync(backupDir, { recursive: true, force: true })
 
     // Put user's settings back (overwriting freshly-extracted defaults) at
-    // their original layout location, then flatten — so the restored ini is
-    // moved into Win64/ alongside the DLLs and ends where Wine actually reads it.
+    // their original layout location, then flatten. If they were captured at
+    // ue4ss/UE4SS-settings.ini, flatten moves them into Win64/; if a prior
+    // flattened install had them at Win64/UE4SS-settings.ini, flatten keeps
+    // that copy (it never clobbers an existing root ini).
     restoreUserSettings(savedSettings)
 
     // Flatten Win64/ue4ss/* → Win64/* for Wine/Proton compatibility.

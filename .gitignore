@@ -47,6 +47,13 @@ desktop.ini
 # External tool outputs (not program source)
 entities.json
 mempalace.yaml
+.understand-anything/
+
+# Subagent-driven development scratch (ledger, briefs, reports)
+.superpowers/
+
+# Superpowers brainstorm specs + SDD plans (AI-workflow docs, not program source)
+docs/superpowers/
 
 # design-sync working dirs (staged scripts, build output, caches, derived assets)
 .ds-sync/

@@ -47,7 +47,14 @@ export function useUpdateHandlers() {
       unsub();
     });
     try {
-      await window.api.appUpdate.install();
+      const result = await window.api.appUpdate.install();
+      // Linux: install opens the releases page and resolves { manual: true }
+      // instead of quitting the app (Windows exe-swap). Unblock the UI so the
+      // user can keep using the app while they download manually.
+      if (result?.manual) {
+        setIsUpdating(false);
+        unsub();
+      }
     } catch (err) {
       setIsUpdating(false);
       setUpdateState('ready');

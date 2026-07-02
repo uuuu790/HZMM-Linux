@@ -17,7 +17,9 @@ export default function Sidebar({
   // Workshop yet, so it only appears in dev builds for testing and is hidden
   // in packaged builds. The glider divisor (--total-radio) tracks the live
   // tab count so the indicator stays aligned whether the tab shows or not.
-  const showSteamWorkshop = import.meta.env.DEV;
+  // window.api guard: in plain-browser dev mode the tab would render but its
+  // steam.browse IPC call would crash, so hide it there too.
+  const showSteamWorkshop = import.meta.env.DEV && !!window.api;
   const navTabCount = showSteamWorkshop ? 6 : 5;
   return (
     <aside className="w-20 lg:w-64 border-r border-slate-200/50 dark:border-white/5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl flex flex-col z-20 transition-colors duration-700 shadow-[4px_0_24px_rgba(0,0,0,0.02)] dark:shadow-[4px_0_24px_rgba(0,0,0,0.2)]">

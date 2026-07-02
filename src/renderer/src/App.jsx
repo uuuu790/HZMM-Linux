@@ -145,7 +145,7 @@ export default function App() {
   // ==========================================
 
   const {
-    appVersion, updateState, updateInfo, updateProgress, isUpdating,
+    appVersion, updateState, updateInfo, updateProgress, isUpdating, updateError,
     handleCheckUpdate, handleDownloadUpdate, handleInstallUpdate,
     initVersion,
   } = useUpdateHandlers();
@@ -486,7 +486,11 @@ export default function App() {
             </Suspense>
           )}
 
-          {import.meta.env.DEV && activeTab === 'steamWorkshop' && (
+          {/* window.api guard: the dev-only tab is reachable in plain-browser
+              dev sessions, where SteamWorkshopTab's unguarded steam.browse
+              call would crash — keep the tab file identical to upstream and
+              gate here instead. */}
+          {import.meta.env.DEV && window.api && activeTab === 'steamWorkshop' && (
             <Suspense fallback={<Spinner />}>
             <SteamWorkshopTab t={t} />
             </Suspense>
@@ -527,6 +531,7 @@ export default function App() {
               handleCheckUpdate={handleCheckUpdate}
               handleDownloadUpdate={handleDownloadUpdate}
               handleInstallUpdate={handleInstallUpdate}
+              updateError={updateError}
               backups={backups} backupLoading={backupLoading}
               handleBackup={handleBackup}
               handleListBackups={handleListBackups}

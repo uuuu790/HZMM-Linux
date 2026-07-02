@@ -28,16 +28,15 @@ test('Custom window controls render (Linux-only)', async () => {
 test('Proton Launch Option copy button (Linux-only)', async () => {
   await switchTab(page, 'settings');
   await page.locator('html').evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  // The Proton block uses a Terminal icon + a ClipboardCopy icon button
+  // The Proton block uses a Terminal icon + a ClipboardCopy icon button.
+  // SettingsTab is lazy()-loaded, so wait for the button to attach instead of
+  // sampling count() once (races the Suspense fallback).
   const copyBtn = page.locator('button').filter({ has: page.locator('svg.lucide-clipboard-copy') }).first();
-  const found = (await copyBtn.count()) > 0;
-  expect.soft(found, 'Proton copy button exists').toBe(true);
-  if (found) {
-    const errBefore = consoleErrors.length;
-    await copyBtn.scrollIntoViewIfNeeded();
-    await copyBtn.click({ force: true });
-    await page.waitForTimeout(400);
-    const errAfter = consoleErrors.length;
-    expect.soft(errAfter - errBefore, `console errors after copy: ${consoleErrors.slice(errBefore).join(' | ')}`).toBe(0);
-  }
+  await expect(copyBtn, 'Proton copy button exists').toBeAttached({ timeout: 10_000 });
+  const errBefore = consoleErrors.length;
+  await copyBtn.scrollIntoViewIfNeeded();
+  await copyBtn.click({ force: true });
+  await page.waitForTimeout(400);
+  const errAfter = consoleErrors.length;
+  expect.soft(errAfter - errBefore, `console errors after copy: ${consoleErrors.slice(errBefore).join(' | ')}`).toBe(0);
 });

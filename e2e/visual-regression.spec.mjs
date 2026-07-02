@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { launchHzmm, switchTab } from './helpers.mjs';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 
 const VIEWPORT = { width: 1280, height: 800 };
 // Visual regression threshold — allow 3% pixel diff for font rendering / anti-aliasing
@@ -16,7 +17,10 @@ let page;
  * the dark-mode toggle persisting between Electron launches.
  */
 function resetDarkModeConfig() {
-  const configFile = join(process.env.APPDATA, 'hzmm-manager', 'config.json');
+  // Same resolution as config-store.js: APPDATA on Windows, Electron's
+  // appData (~/.config) on Linux.
+  const appData = process.env.APPDATA ?? join(homedir(), '.config');
+  const configFile = join(appData, 'hzmm-manager', 'config.json');
   if (!existsSync(configFile)) return;
   try {
     const config = JSON.parse(readFileSync(configFile, 'utf-8'));

@@ -7,7 +7,9 @@ import path from 'path'
 import fs from 'fs'
 import logger from './logger.js'
 
-const REPO = 'uuuu790/HZMM'
+// Linux fork checks its own repo — releases (AppImage/deb) are published on
+// HZMM-Linux, on the fork's own cadence, not on the Windows repo.
+const REPO = 'uuuu790/HZMM-Linux'
 const REQUEST_TIMEOUT_MS = 10000
 const ALLOWED_DOWNLOAD_HOSTS = ['github.com', 'objects.githubusercontent.com']
 const ALLOWED_API_HOSTS = ['api.github.com', 'github.com', 'objects.githubusercontent.com', 'codeload.github.com']

@@ -2,7 +2,7 @@
   "name": "hzmm-linux-app",
   "version": "1.5.0",
   "description": "HumanitZ Mod Manager (Linux)",
-  "homepage": "https://github.com/uuuu790/HZMM",
+  "homepage": "https://github.com/uuuu790/HZMM-Linux",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

@@ -16,7 +16,7 @@ import logger from '../services/logger.js'
 //                              is fetched on Linux — see below)
 //   app-update:install       -> open the releases page for a MANUAL download
 //   app-update:progress     -> download progress channel (unused on Linux)
-const RELEASES_URL = 'https://github.com/uuuu790/HZMM/releases/latest'
+const RELEASES_URL = 'https://github.com/uuuu790/HZMM-Linux/releases/latest'
 
 function registerAppUpdateIpc(_mainWindow) {
   ipcMain.handle('app-update:get-version', () => {

@@ -1,9 +1,22 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter/wght.css";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* The Linux build bundles Inter so the UI matches the Windows build's Segoe UI
+   metrics. Without it, `system-ui` falls back to DejaVu/Liberation Sans, which
+   is wider and heavier — that's what made the whole UI look "off" vs Windows
+   and overflowed the sidebar launch button ("Game Running" → "Game Ru…").
+   Inter has no CJK glyphs, so 中文/日本語/한국어 fall through to the system CJK
+   font here — same behavior as Segoe UI on Windows. */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    "Noto Sans", "Noto Sans CJK TC", "Microsoft JhengHei", sans-serif;
+}
 
 body {
   margin: 0;
   overflow: hidden;
+  font-family: var(--font-sans);
 }
 
 /* Mod README markdown styles */

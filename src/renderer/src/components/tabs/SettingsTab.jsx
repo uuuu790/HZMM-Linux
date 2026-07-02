@@ -253,13 +253,13 @@ function SettingsTab({
               <h4 className="text-sm md:text-base font-bold text-slate-800 dark:text-slate-100 truncate leading-tight transition-colors duration-700 mb-0.5">{t.protonLaunchTitle}</h4>
               <p className="text-[10px] md:text-[11px] text-slate-500 dark:text-slate-400 truncate font-medium transition-colors duration-700">{t.protonLaunchDesc}</p>
             </div>
-            <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
-              <code className="hidden md:inline-block px-3 py-1.5 text-[10px] md:text-xs rounded-full bg-slate-100 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 font-mono whitespace-nowrap">
+            <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
+              <code title={PROTON_LAUNCH_OPTION} className="hidden md:block px-3 py-1.5 text-[10px] md:text-xs rounded-full bg-slate-100 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 font-mono whitespace-nowrap truncate min-w-0">
                 {PROTON_LAUNCH_OPTION}
               </code>
               <button
                 onClick={handleCopyProton}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] md:text-xs font-bold rounded-full transition-all duration-300 shadow-sm active:scale-95 hover:shadow-md ${protonCopied ? 'bg-emerald-500 text-white' : 'bg-slate-800 dark:bg-slate-700 text-white hover:bg-sky-500 dark:hover:bg-sky-500'}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] md:text-xs font-bold rounded-full transition-all duration-300 shadow-sm active:scale-95 hover:shadow-md shrink-0 ${protonCopied ? 'bg-emerald-500 text-white' : 'bg-slate-800 dark:bg-slate-700 text-white hover:bg-sky-500 dark:hover:bg-sky-500'}`}
               >
                 {protonCopied ? <CheckCircle className="w-3.5 h-3.5" /> : <ClipboardCopy className="w-3.5 h-3.5" />}
                 <span>{protonCopied ? t.protonLaunchCopied : t.protonLaunchCopy}</span>

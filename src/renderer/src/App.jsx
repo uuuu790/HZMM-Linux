@@ -356,7 +356,7 @@ export default function App() {
       {/* Split into two zones: a pinned header bar and a scrollable area
           below it. The scroll-thumb now starts at the bottom of the HZMM
           title row instead of at the top of the window. */}
-      <div className="flex-1 flex flex-col h-screen relative z-10 md:pl-12">
+      <div className="flex-1 flex flex-col h-screen relative z-10 md:pl-12 min-w-0">
 
         <div className="absolute top-0 left-0 w-full h-12 [-webkit-app-region:drag]" />
 

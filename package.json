@@ -19,6 +19,7 @@
     "fix:dev-icon": "node scripts/fix-dev-icon.js"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
     "@tailwindcss/typography": "^0.5.19",
     "dompurify": "^3.4.3",
     "electron-window-state": "^5.0.3",

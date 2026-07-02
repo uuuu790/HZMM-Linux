@@ -1,0 +1,71 @@
+name: Upload release to Nexus Mods
+
+# Auto-runs when a (non-prerelease) GitHub release is published, pushing its
+# AppImage (zipped — the Nexus Upload API accepts .zip only) as a NEW VERSION
+# of the Linux file on the HZMM Nexus page
+# (https://www.nexusmods.com/humanitz/mods/82). Mirrors the Windows repo's
+# workflow. Can also be run manually for any tag from the Actions tab.
+#
+# One-time setup:
+#   1. Repository secret NEXUSMODS_API_KEY
+#      (Settings > Secrets and variables > Actions > New repository secret;
+#      generate at https://www.nexusmods.com/settings/api-keys)
+#   2. Repository variable NEXUS_LINUX_FILE_ID — the file_id of the Linux
+#      file entry on Nexus. The Upload API can only add versions to an
+#      EXISTING file, so upload the first Linux zip manually on the website,
+#      then read its file_id from "API Info" on the mod page's Files tab and
+#      set it here (Settings > Secrets and variables > Actions > Variables).
+#      Until this variable is set, the job skips itself.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload (e.g. v1.0.0)"
+        required: true
+        default: v1.0.0
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    # Skip pre-releases, and skip entirely until the Nexus file entry exists.
+    if: ${{ (github.event_name == 'workflow_dispatch' || !github.event.release.prerelease) && vars.NEXUS_LINUX_FILE_ID != '' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve release tag and Nexus version
+        id: tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          TAG="${RELEASE_TAG:-$DISPATCH_TAG}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the release AppImage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release download "${{ steps.tag.outputs.tag }}"
+          --repo "${{ github.repository }}"
+          --pattern '*.AppImage'
+          --output "HZMM Manager.AppImage"
+
+      - name: Zip the AppImage (the Nexus Upload API accepts .zip only)
+        run: zip "HZMM Manager Linux.zip" "HZMM Manager.AppImage"
+
+      - name: Upload new version to Nexus
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.8
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_id: ${{ vars.NEXUS_LINUX_FILE_ID }}
+          filename: HZMM Manager Linux.zip
+          version: ${{ steps.tag.outputs.version }}
+          display_name: HZMM Manager for Linux ${{ steps.tag.outputs.tag }}
+          # Auto-fills the Nexus version description from the GitHub release
+          # notes (empty on manual runs — add notes on Nexus if you want).
+          description: ${{ github.event.release.body }}
+          category: main
+          archive_existing_version: true

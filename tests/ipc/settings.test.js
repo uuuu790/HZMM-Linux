@@ -19,17 +19,15 @@ describe('ALLOWED_SETTINGS_KEYS', () => {
   // Adding a new persisted setting in renderer must add it here too.
   const REQUIRED_KEYS = [
     'gamePath',
-    'theme', 'themeId', 'darkMode',
+    'themeId', 'darkMode',
     'minimizeToTray',
     'nexusApiKey',
     'ue4ssVersion',
-    'autoCheckUpdate',
-    'modSortOrder', 'modSortDirection',
-    'lastTab',
     'windowState',
     'profiles', 'activeProfileId',
     'nexusInstalledMods',
     'skipInstallPreview',
+    'uiZoom',
   ]
 
   it.each(REQUIRED_KEYS)('whitelists %s', (key) => {
@@ -38,6 +36,9 @@ describe('ALLOWED_SETTINGS_KEYS', () => {
 
   it('rejects keys never written by the app', () => {
     expect(ALLOWED_SETTINGS_KEYS.has('language')).toBe(false) // moved to locale:set-preference
+    expect(ALLOWED_SETTINGS_KEYS.has('theme')).toBe(false) // superseded by themeId
+    expect(ALLOWED_SETTINGS_KEYS.has('autoCheckUpdate')).toBe(false) // removed: unread
+    expect(ALLOWED_SETTINGS_KEYS.has('lastTab')).toBe(false) // removed: unread
     expect(ALLOWED_SETTINGS_KEYS.has('arbitraryKey')).toBe(false)
     expect(ALLOWED_SETTINGS_KEYS.has('__proto__')).toBe(false)
     expect(ALLOWED_SETTINGS_KEYS.has('')).toBe(false)

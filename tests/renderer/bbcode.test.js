@@ -141,6 +141,23 @@ describe('bbcodeToRawHtml — BBCode tags', () => {
     expect(bbcodeToRawHtml('[img]javascript:1[/img]')).toBe('')
   })
 
+  it('renders [img=URL]...[/img] attribute form', () => {
+    const out = bbcodeToRawHtml('[img=https://x.com/a.png][/img]')
+    expect(out).toContain('<img')
+    expect(out).toContain('src="https://x.com/a.png"')
+    expect(out).not.toContain('[img=')
+  })
+
+  it('renders standalone [img=URL] without a closing tag', () => {
+    const out = bbcodeToRawHtml('[img=https://x.com/b.png]')
+    expect(out).toContain('src="https://x.com/b.png"')
+    expect(out).not.toContain('[img=')
+  })
+
+  it('drops [img=URL] with unsafe URL', () => {
+    expect(bbcodeToRawHtml('[img=javascript:alert(1)][/img]')).toBe('')
+  })
+
   it('converts [youtube] to external link', () => {
     const out = bbcodeToRawHtml('[youtube]dQw4w9WgXcQ[/youtube]')
     expect(out).toContain('href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"')
@@ -150,6 +167,34 @@ describe('bbcodeToRawHtml — BBCode tags', () => {
   it('renders unordered and ordered lists', () => {
     expect(bbcodeToRawHtml('[list][*]one[*]two[/list]')).toContain('<ul><li>one</li><li>two</li></ul>')
     expect(bbcodeToRawHtml('[list=1][*]one[*]two[/list]')).toContain('<ol><li>one</li><li>two</li></ol>')
+  })
+
+  it('handles [*]item[/*] paired closers and bare [*] without [list]', () => {
+    // Paired [/*] closer must not survive inside [list].
+    expect(bbcodeToRawHtml('[list][*]one[/*][*]two[/*][/list]'))
+      .toContain('<ul><li>one</li><li>two</li></ul>')
+    expect(bbcodeToRawHtml('[list=1][*]one[/*][*]two[/*][/list]'))
+      .toContain('<ol><li>one</li><li>two</li></ol>')
+    // Bare [*] with no [list] wrapper still becomes a <ul>.
+    expect(bbcodeToRawHtml('[*]one[/*][*]two[/*]'))
+      .toContain('<ul><li>one</li><li>two</li></ul>')
+    // No [/*] residue anywhere.
+    expect(bbcodeToRawHtml('[list][*]a[/*][/list]')).not.toContain('[/*]')
+    expect(bbcodeToRawHtml('[*]a[/*]')).not.toContain('[/*]')
+  })
+
+  it('keeps legitimate [color] values (keyword, hex, rgb)', () => {
+    expect(bbcodeToRawHtml('[color=red]x[/color]')).toBe('<span style="color:red">x</span>')
+    expect(bbcodeToRawHtml('[color=#ff0000]x[/color]')).toBe('<span style="color:#ff0000">x</span>')
+    expect(bbcodeToRawHtml('[color=rgb(255,0,0)]x[/color]')).toBe('<span style="color:rgb(255,0,0)">x</span>')
+  })
+
+  it('drops junk [color] payloads (keeps text, no style)', () => {
+    // IE-era CSS expression() injection — must not survive into the style attr.
+    const out = bbcodeToRawHtml('[color=a)expression(1)]x[/color]')
+    expect(out).toBe('x')
+    expect(out).not.toContain('expression')
+    expect(out).not.toContain('style=')
   })
 
   it('renders spoiler as <details>', () => {
@@ -281,5 +326,16 @@ describe('bbcodeToHtml — edge cases', () => {
     const out = bbcodeToHtml('[b]a[i]b[/b]c[/i]')
     expect(out).toBeTruthy()
     expect(out.length).toBeLessThan(1000)
+  })
+})
+
+describe('Steam heading tags', () => {
+  it('renders [h1]/[h2]/[h3] as heading elements (not literal text)', () => {
+    const html = bbcodeToHtml('[h1]Title[/h1][h2]Sub[/h2][h3]Small[/h3]')
+    expect(html).not.toContain('[h1]')
+    expect(html).not.toContain('[/h3]')
+    expect(html).toMatch(/<h[1-6][^>]*>Title<\/h[1-6]>/)
+    expect(html).toMatch(/<h[1-6][^>]*>Sub<\/h[1-6]>/)
+    expect(html).toMatch(/<h[1-6][^>]*>Small<\/h[1-6]>/)
   })
 })

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { isUe4ssMod } from '../../src/main/ipc/mods-scan.js'
+import { isUe4ssMod, classifyUe4ssMod } from '../../src/main/ipc/mods-scan.js'
 
 // Real-fs fixtures (no mock-fs) so the predicate is exercised against the
 // same Node fs semantics it sees in production. The detection contract:
@@ -98,5 +98,37 @@ describe('isUe4ssMod', () => {
     // own behavior. This test just pins that lowercase main.lua works.
     const modDir = makeMod({ 'main.lua': '-- ok' })
     expect(isUe4ssMod(modDir)).toBe(true)
+  })
+})
+
+describe('classifyUe4ssMod', () => {
+  it('classifies a Scripts/main.lua mod as lua', () => {
+    const modDir = makeMod({ 'Scripts/main.lua': '-- entry' })
+    expect(classifyUe4ssMod(modDir)).toBe('lua')
+  })
+
+  it('classifies a flat main.lua mod as lua', () => {
+    const modDir = makeMod({ 'main.lua': '-- flat' })
+    expect(classifyUe4ssMod(modDir)).toBe('lua')
+  })
+
+  it('classifies a dlls/main.dll cppmod as cpp', () => {
+    const modDir = makeMod({ 'dlls/main.dll': 'binary' })
+    expect(classifyUe4ssMod(modDir)).toBe('cpp')
+  })
+
+  it('classifies a first-level .dll (unusual layout) as cpp', () => {
+    const modDir = makeMod({ 'rogue.dll': 'binary' })
+    expect(classifyUe4ssMod(modDir)).toBe('cpp')
+  })
+
+  it('prefers lua when a mod has BOTH a lua entry and a dll', () => {
+    const modDir = makeMod({ 'Scripts/main.lua': '-- lua', 'dlls/main.dll': 'binary' })
+    expect(classifyUe4ssMod(modDir)).toBe('lua')
+  })
+
+  it('defaults to lua for a directory with no recognizable markers', () => {
+    const modDir = makeMod({ 'README.md': '# nothing' })
+    expect(classifyUe4ssMod(modDir)).toBe('lua')
   })
 })

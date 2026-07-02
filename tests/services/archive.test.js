@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest'
+import os from 'os'
+import fs from 'fs'
 import path from 'path'
 import {
   isSafePath,
   validateEntries,
   analyzeArchiveStructure,
+  validateArchiveLimits,
+  resolveCollisionFreePath,
+  MAX_TOTAL_UNCOMPRESSED_BYTES,
+  MAX_ENTRY_COUNT,
 } from '../../src/main/services/archive.js'
 
 const IS_WINDOWS = process.platform === 'win32'
@@ -87,5 +93,97 @@ describe('archive.analyzeArchiveStructure — mod type detection', () => {
   it('does not false-positive on just a pak file under a nested folder', () => {
     const result = analyzeArchiveStructure(['modA/assets/data.pak'])
     expect(result.type).toBe('pak-only')
+  })
+})
+
+// Regression guard for zip-slip: validateEntries is the ONLY zip-slip defense
+// (every StreamZip uses skipEntryNameValidation). A future refactor that drops
+// the guard, or feeds it an unsafe entry, must fail here.
+describe('archive.validateEntries — zip slip regression', () => {
+  const rejectedEntries = [
+    IS_WINDOWS ? '..\\..\\evil.dll' : '../../evil.dll',
+    '../../../escape.txt',
+    'good/../../escape.txt',
+    IS_WINDOWS ? 'C:\\Windows\\System32\\evil.dll' : '/etc/evil',
+  ]
+
+  for (const entry of rejectedEntries) {
+    it(`rejects entry "${entry}"`, () => {
+      expect(() => validateEntries([entry], DEST)).toThrow()
+    })
+
+    it(`rejects "${entry}" even alongside safe entries`, () => {
+      expect(() => validateEntries(['safe.pak', entry, 'also/safe.txt'], DEST)).toThrow()
+    })
+  }
+
+  it('allows a fully-safe entry list', () => {
+    expect(() => validateEntries(['a.pak', 'sub/b.pak'], DEST)).not.toThrow()
+  })
+})
+
+// Decompression-bomb guard: reject archives whose declared uncompressed totals
+// blow past the ceilings, before any byte is written.
+describe('archive.validateArchiveLimits — decompression bomb defense', () => {
+  it('passes for a normal archive', () => {
+    expect(() => validateArchiveLimits([1024, 2048, 4096])).not.toThrow()
+  })
+
+  it('passes at exactly the byte ceiling', () => {
+    expect(() => validateArchiveLimits([MAX_TOTAL_UNCOMPRESSED_BYTES])).not.toThrow()
+  })
+
+  it('rejects when total uncompressed size exceeds the byte ceiling', () => {
+    expect(() => validateArchiveLimits([MAX_TOTAL_UNCOMPRESSED_BYTES + 1])).toThrow(/decompression bomb/)
+  })
+
+  it('rejects when summed sizes exceed the byte ceiling', () => {
+    const half = Math.ceil(MAX_TOTAL_UNCOMPRESSED_BYTES / 2) + 1
+    expect(() => validateArchiveLimits([half, half])).toThrow(/decompression bomb/)
+  })
+
+  it('rejects when entry count exceeds the limit', () => {
+    const tiny = new Array(MAX_ENTRY_COUNT + 1).fill(1)
+    expect(() => validateArchiveLimits(tiny)).toThrow(/decompression bomb/)
+  })
+
+  it('passes at exactly the entry-count limit', () => {
+    const sizes = new Array(MAX_ENTRY_COUNT).fill(1)
+    expect(() => validateArchiveLimits(sizes)).not.toThrow()
+  })
+})
+
+// Same-basename paks from different subfolders must not silently overwrite.
+describe('archive.resolveCollisionFreePath — basename collision', () => {
+  it('returns the path unchanged when nothing exists there', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hzmm-collide-'))
+    try {
+      const p = path.join(dir, 'mod.pak')
+      expect(resolveCollisionFreePath(p)).toBe(p)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('appends " (2)" before the extension when the path is taken', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hzmm-collide-'))
+    try {
+      const p = path.join(dir, 'mod.pak')
+      fs.writeFileSync(p, 'a')
+      expect(resolveCollisionFreePath(p)).toBe(path.join(dir, 'mod (2).pak'))
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps incrementing the suffix for repeated collisions', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hzmm-collide-'))
+    try {
+      fs.writeFileSync(path.join(dir, 'mod.pak'), 'a')
+      fs.writeFileSync(path.join(dir, 'mod (2).pak'), 'b')
+      expect(resolveCollisionFreePath(path.join(dir, 'mod.pak'))).toBe(path.join(dir, 'mod (3).pak'))
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

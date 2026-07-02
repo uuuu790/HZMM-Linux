@@ -277,3 +277,54 @@ describe('removeKeyval', () => {
     expect(keyvals).toEqual(['B']);
   });
 });
+
+describe('inline comment + trailing comma (regression: #2 save corruption)', () => {
+  it('parses a quoted value that has BOTH a trailing comma and an inline comment', () => {
+    const kv = parseConfigFile('  Name = "AK47", -- gun').find(e => e.type === 'keyval');
+    expect(kv.value).toBe('AK47');
+    expect(kv.isQuoted).toBe(true);
+    expect(kv.hadComma).toBe(true);
+  });
+
+  it('round-trips a quoted value with comma + comment unchanged', () => {
+    const text = '  Name = "AK47", -- gun';
+    expect(serializeConfig(parseConfigFile(text))).toBe(text);
+  });
+
+  it('preserves quotes AND comma AND comment after editing the value', () => {
+    const entries = parseConfigFile('  Name = "AK47", -- gun');
+    entries.find(e => e.type === 'keyval').value = 'M16';
+    // Before the fix this serialized to `Name = M16 -- gun` (a Lua syntax error).
+    expect(serializeConfig(entries)).toBe('  Name = "M16", -- gun');
+  });
+
+  it('guesses int (not string) for a numeric value with comma + comment', () => {
+    const kv = parseConfigFile('  Damage = 10, -- base').find(e => e.type === 'keyval');
+    expect(kv.value).toBe('10');
+    expect(guessValueType(kv.value)).toBe('int');
+    expect(kv.hadComma).toBe(true);
+  });
+
+  it('keeps the comma after editing a numeric value with comma + comment', () => {
+    const entries = parseConfigFile('  Damage = 10, -- base');
+    entries.find(e => e.type === 'keyval').value = '25';
+    expect(serializeConfig(entries)).toBe('  Damage = 25, -- base');
+  });
+
+  it('still handles a trailing comma with no comment', () => {
+    const text = '  TickRate = 60,';
+    expect(serializeConfig(parseConfigFile(text))).toBe(text);
+  });
+
+  it('still handles an inline comment with no trailing comma', () => {
+    const text = '  Mode = fast -- speed';
+    expect(serializeConfig(parseConfigFile(text))).toBe(text);
+  });
+
+  it('does not treat -- inside a quoted string as a comment', () => {
+    const kv = parseConfigFile('  Desc = "TODO -- fix",').find(e => e.type === 'keyval');
+    expect(kv.value).toBe('TODO -- fix');
+    expect(kv.isQuoted).toBe(true);
+    expect(kv.hadComma).toBe(true);
+  });
+});

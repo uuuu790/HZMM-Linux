@@ -24,15 +24,15 @@
   font-weight: 400;
   src: url("./assets/fonts/selawik/selawk.woff2") format("woff2");
 }
+/* Bold range mapped one design-weight DOWN: WSLg's FreeType (grayscale AA +
+   software rendering) draws strokes visibly heavier than Windows DirectWrite,
+   so Selawik Bold here reads much fatter than Segoe UI Bold there. Semibold
+   rendered by FreeType ≈ Bold rendered by DirectWrite. Verified by probe
+   screenshots against the Windows build. */
 @font-face {
   font-family: "Selawik";
-  font-weight: 600;
+  font-weight: 600 900;
   src: url("./assets/fonts/selawik/selawksb.woff2") format("woff2");
-}
-@font-face {
-  font-family: "Selawik";
-  font-weight: 700;
-  src: url("./assets/fonts/selawik/selawkb.woff2") format("woff2");
 }
 
 @theme {

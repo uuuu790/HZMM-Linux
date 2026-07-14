@@ -1,7 +1,13 @@
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 
-const execAsync = promisify(exec)
+// execFile, NOT exec: exec wraps the command in `/bin/sh -c pgrep -af <exe>`,
+// and on shells that fork rather than exec (dash — Debian/Ubuntu's /bin/sh)
+// pgrep -f then matches the wrapper shell's own command line, which contains
+// the exe name. That made isGameRunning() return true 100% of the time on
+// .deb-target systems. execFile spawns pgrep directly, so no process in the
+// chain carries the pattern.
+const execFileAsync = promisify(execFile)
 
 // 只偵測 shipping 進程作為「遊戲是否運行中」的依據。根目錄 HumanitZ.exe 是
 // ~190KB 的 launcher/bootstrap，生命週期綁在 shipping 上、在異常結束時可能殘留；
@@ -24,7 +30,14 @@ export function parsePgrepOutput(stdout, expectedExeName) {
   const lines = stdout.trim().split(/\r?\n/)
   const needle = expectedExeName.toLowerCase()
   for (const line of lines) {
-    if (line.toLowerCase().includes(needle)) return true
+    const lower = line.toLowerCase()
+    // Defense-in-depth against self-matching: a row whose command line
+    // contains `pgrep` is the search process itself (or a shell wrapping it),
+    // never the game — Wine/Proton command lines don't invoke pgrep. Without
+    // this, running the search through a forking shell reports the game as
+    // permanently running (see execFile note above).
+    if (lower.includes('pgrep')) continue
+    if (lower.includes(needle)) return true
   }
   return false
 }
@@ -43,8 +56,8 @@ async function isGameRunning() {
       // Wine carries even though the kernel process is wine64-preloader.
       // -f matches against the full command line (default would be argv[0]).
       // pgrep exits 1 when nothing matches — catch handles that as "not running".
-      const { stdout } = await execAsync(
-        `pgrep -af ${exeName}`,
+      const { stdout } = await execFileAsync(
+        'pgrep', ['-af', exeName],
         { encoding: 'utf-8', timeout: 3000 }
       )
       if (parsePgrepOutput(stdout, exeName)) return true

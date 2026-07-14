@@ -78,6 +78,23 @@ describe('parsePgrepOutput', () => {
     expect(parsePgrepOutput(stdout, null)).toBe(false)
     expect(parsePgrepOutput(stdout, undefined)).toBe(false)
   })
+
+  // Regression: on dash-/bin/sh systems (Debian/Ubuntu), running the search
+  // through a shell made pgrep -f match the wrapper shell's own command line,
+  // so "game running" was reported 100% of the time. Rows that are the pgrep
+  // invocation itself (or a shell carrying it) must never count as a match.
+  it('ignores the pgrep search process itself (self-match guard)', () => {
+    const stdout = '28919 /bin/sh -c pgrep -af HumanitZ-Win64-Shipping.exe'
+    expect(parsePgrepOutput(stdout, 'HumanitZ-Win64-Shipping.exe')).toBe(false)
+  })
+
+  it('ignores a bare pgrep row but still matches a real game row alongside it', () => {
+    const stdout = [
+      '28919 pgrep -af HumanitZ-Win64-Shipping.exe',
+      '200 wine64-preloader Z:\\drive_c\\game\\HumanitZ-Win64-Shipping.exe -fullscreen',
+    ].join('\n')
+    expect(parsePgrepOutput(stdout, 'HumanitZ-Win64-Shipping.exe')).toBe(true)
+  })
 })
 
 describe('GAME_PROCESS_NAMES', () => {

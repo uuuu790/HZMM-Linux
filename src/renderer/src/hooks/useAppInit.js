@@ -47,7 +47,11 @@ export function useAppInit({ addToast, t, refreshMods }) {
   // --- UE4SS progress listener ---
   useEffect(() => {
     if (!window.api) return;
-    const unsub = window.api.ue4ss.onProgress((progress) => { setUe4ssProgress(progress); });
+    // downloadFile emits -1 as the "no content-length" indeterminate signal;
+    // rendering it verbatim showed "-1%" and a negative-width bar.
+    const unsub = window.api.ue4ss.onProgress((progress) => {
+      setUe4ssProgress(typeof progress === 'number' && progress >= 0 ? progress : 0);
+    });
     return unsub;
   }, []);
 
@@ -95,8 +99,11 @@ export function useAppInit({ addToast, t, refreshMods }) {
 
   // Launch state machine: idle → launching → confirmed → idle (isGameRunning takes over).
   // Promote launching → confirmed once the game process is detected.
+  const launchTimerRef = useRef(null);
   useEffect(() => {
     if (isGameRunning && launchState === 'launching') {
+      // Game detected — the not-detected fallback timer is now moot.
+      if (launchTimerRef.current) { clearTimeout(launchTimerRef.current); launchTimerRef.current = null; }
       setLaunchState('confirmed');
     }
   }, [isGameRunning, launchState]);
@@ -123,15 +130,22 @@ export function useAppInit({ addToast, t, refreshMods }) {
       return;
     }
     setLaunchState('launching');
-    // Timeout fallback in case game detection fails
-    const timeout = setTimeout(() => setLaunchState('idle'), 30000);
+    // Fallback: reset to idle if the game is never DETECTED. game:launch only
+    // dispatches the steam:// URL and resolves immediately — clearing this on
+    // resolve (as the code used to) killed the fallback milliseconds in, so a
+    // cancelled Steam dialog / crashed boot left the Launch button disabled
+    // until app restart. The timer is cleared by the detection effect above.
+    if (launchTimerRef.current) clearTimeout(launchTimerRef.current);
+    launchTimerRef.current = setTimeout(() => {
+      launchTimerRef.current = null;
+      setLaunchState((s) => (s === 'launching' ? 'idle' : s));
+    }, 30000);
     try {
       await window.api.game.launch();
-      clearTimeout(timeout);
     } catch (err) {
       console.error('Launch failed:', err);
+      if (launchTimerRef.current) { clearTimeout(launchTimerRef.current); launchTimerRef.current = null; }
       setLaunchState('idle');
-      clearTimeout(timeout);
     }
   }, [isGameRunning, launchState, addToast, t]);
 
@@ -151,7 +165,9 @@ export function useAppInit({ addToast, t, refreshMods }) {
       addToast(t.toastEngineDone, 'success');
     } catch (err) {
       console.error('UE4SS action failed:', err);
-      setUe4ssStatus('uninstalled');
+      // A failed UPDATE leaves the existing install untouched — reverting to
+      // 'uninstalled' made the dashboard offer "Install" over a working setup.
+      setUe4ssStatus(action === 'install' ? 'uninstalled' : 'installed');
       const msg = err?.message?.includes('GAME_PATH_NOT_FOUND')
         ? t.toastEngineFailedNoPath
         : `${t.toastEngineFailed}: ${err?.message || err}`;

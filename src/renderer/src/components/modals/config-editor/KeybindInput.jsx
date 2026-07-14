@@ -23,7 +23,7 @@ function buildCombo(e) {
   return parts.join('+');
 }
 
-export default function KeybindInput({ value, onChange }) {
+export default function KeybindInput({ value, onChange, pressAnyKeyLabel = 'Press any key…', clickToSetLabel = 'Click to set' }) {
   const [recording, setRecording] = useState(false);
   const buttonRef = useRef(null);
 
@@ -41,7 +41,7 @@ export default function KeybindInput({ value, onChange }) {
     return () => window.removeEventListener('keydown', handler, true);
   }, [recording, onChange]);
 
-  const display = recording ? '按下任意鍵…' : (value || '點擊設定');
+  const display = recording ? pressAnyKeyLabel : (value || clickToSetLabel);
 
   return (
     <div className="relative w-full">

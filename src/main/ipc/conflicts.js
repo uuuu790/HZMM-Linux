@@ -67,12 +67,16 @@ export function findConflicts(paksPaths, readIndex = readPakIndex) {
 
     const files = fs.readdirSync(paksDir)
     for (const file of files) {
-      if (!file.endsWith('.pak')) continue
       const lower = file.toLowerCase()
+      if (!lower.endsWith('.pak')) continue
       if (lower.startsWith('pakchunk') || lower.startsWith('global')) continue
 
       const filePath = path.join(paksDir, file)
-      const stat = fs.statSync(filePath)
+      // A concurrent toggle/remove renames paks between readdir and here —
+      // skip the vanished entry instead of letting ENOENT abort the whole
+      // scan (which the renderer's catch turned into a silent "no conflicts").
+      let stat
+      try { stat = fs.statSync(filePath) } catch { continue }
       if (!stat.isFile()) continue
 
       const entries = readIndex === readPakIndex

@@ -374,6 +374,7 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
               searchActive={searchActive}
               matcher={matcher}
               noMatchLabel={t.configSearchNoMatch || 'No settings match your search.'}
+              t={t}
             />
           ) : (
             <CommentModeRenderer entries={entries} lang={lang} onUpdateValue={updateValue} />

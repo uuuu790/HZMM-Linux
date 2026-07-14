@@ -140,8 +140,16 @@ export default function NexusModDetailModal({ mod, t, lang: _lang, onClose, addT
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(f);
     }
+    // V2 delivers uploaded_timestamp as an ISO-8601 STRING — numeric
+    // subtraction on those is NaN, which made this sort a silent no-op and
+    // listed files in raw API order (old versions above new ones).
+    const ts = (v) => {
+      if (typeof v === 'number') return v > 1e12 ? v : v * 1000; // ms vs V1 unix seconds
+      const t = Date.parse(v);
+      return Number.isFinite(t) ? t : 0;
+    };
     for (const k of Object.keys(groups)) {
-      groups[k].sort((a, b) => (b.uploaded_timestamp || 0) - (a.uploaded_timestamp || 0));
+      groups[k].sort((a, b) => ts(b.uploaded_timestamp) - ts(a.uploaded_timestamp));
     }
     return groups;
   }, [files]);

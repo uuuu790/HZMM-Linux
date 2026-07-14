@@ -126,9 +126,13 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
     return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
   }, []);
   // Subscribe to main-process download progress so the installing card shows a
-  // live percentage instead of an indeterminate spinner.
+  // live percentage instead of an indeterminate spinner. downloadFile sends -1
+  // as its "no content-length" sentinel — map it to null (this component's
+  // indeterminate value) so the button doesn't render "-1%".
   useEffect(() => {
-    const unsub = window.api?.nexus?.onDownloadProgress?.((p) => setDownloadProgress(p));
+    const unsub = window.api?.nexus?.onDownloadProgress?.((p) => {
+      setDownloadProgress(typeof p === 'number' && p >= 0 ? p : null);
+    });
     return () => { if (typeof unsub === 'function') unsub(); };
   }, []);
   // Mod-level set: any file of this mod counts. Used by the card + modal title.

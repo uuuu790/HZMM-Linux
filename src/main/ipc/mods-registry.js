@@ -12,7 +12,10 @@ function syncUe4ssModRegistry(ue4ssModsPath, modName, enabled) {
       const regex = new RegExp(`^(${modName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\s*:\\s*\\d+`, 'm')
       const newLine = `${modName} : ${enabled ? '1' : '0'}`
       if (regex.test(content)) {
-        content = content.replace(regex, newLine)
+        // Replacer FUNCTION, not string: a mod name containing `$` sequences
+        // ("Cash$$Mod") would otherwise be interpreted as replacement patterns
+        // and write a corrupted line that never matches the folder again.
+        content = content.replace(regex, () => newLine)
       } else if (enabled) {
         // Only add if enabling — don't clutter mods.txt with disabled entries
         const keybindsMatch = content.match(/^;.*keybinds.*$/im)

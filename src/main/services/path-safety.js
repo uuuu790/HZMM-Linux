@@ -8,7 +8,11 @@ import path from 'path'
 export const EXECUTABLE_EXTS = new Set([
   '.exe', '.bat', '.cmd', '.com', '.ps1', '.psm1', '.msi', '.lnk', '.scr',
   '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.jar', '.cpl',
-  '.reg', '.inf', '.sct', '.application'
+  '.reg', '.inf', '.sct', '.application',
+  // Linux equivalents — this fork RUNS on Linux, where xdg-open dispatches
+  // by extension/association too: .desktop files execute their Exec= line on
+  // several DEs, and .sh/.run/.appimage are directly executable payloads.
+  '.desktop', '.sh', '.run', '.appimage'
 ])
 
 export function isExecutableExt(filePath) {

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell, ipcMain, Tray, Menu, nativeImage, screen } from 'electron'
 import { join } from 'path'
+import fs from 'fs'
 import windowStateKeeper from 'electron-window-state'
 
 import { registerModsIpc } from './ipc/mods'
@@ -37,27 +38,72 @@ const ICON_PATH = is.dev
   ? join(__dirname, '../../resources/icon.png')
   : join(process.resourcesPath, 'icon.png')
 
+// XDG autostart entry (~/.config/autostart/<name>.desktop). Electron's
+// loginItemSettings API doesn't exist on Linux, so start-on-boot is
+// implemented per freedesktop convention. AppImage runs must point Exec at
+// the .AppImage itself ($APPIMAGE), not the extracted inner binary in the
+// throwaway mount point.
+const AUTOSTART_DESKTOP = join(app.getPath('appData'), 'autostart', 'hzmm-manager.desktop')
+
+function getLinuxAutoStart() {
+  try {
+    return fs.existsSync(AUTOSTART_DESKTOP)
+  } catch {
+    return false
+  }
+}
+
+function setLinuxAutoStart(enabled) {
+  try {
+    if (!enabled) {
+      if (fs.existsSync(AUTOSTART_DESKTOP)) fs.unlinkSync(AUTOSTART_DESKTOP)
+      return
+    }
+    const execPath = process.env.APPIMAGE || process.execPath
+    const entry = [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=HZMM Manager',
+      `Exec="${execPath.replace(/"/g, '\\"')}"`,
+      `Icon=${ICON_PATH}`,
+      'X-GNOME-Autostart-enabled=true',
+      'Comment=HumanitZ Mod Manager',
+      '',
+    ].join('\n')
+    fs.mkdirSync(join(app.getPath('appData'), 'autostart'), { recursive: true })
+    fs.writeFileSync(AUTOSTART_DESKTOP, entry, 'utf-8')
+  } catch (err) {
+    logger.warn(`Failed to update autostart entry: ${err.message}`)
+  }
+}
+
 let mainWindow
 let tray = null
 let ipcRegistered = false
 let isQuitting = false
 
-function registerAllIpc(mainWindow) {
+// NOTE: the parameter deliberately does NOT shadow the module-level
+// `mainWindow`. registerAllIpc runs once (guarded below), so every closure it
+// creates lives for the whole app; the inline handlers reference the
+// module-level variable, which createWindow() reassigns — a window rebuilt
+// from the tray / second-instance path keeps working window controls instead
+// of silently no-op'ing against the first (destroyed) window.
+function registerAllIpc(win) {
   if (ipcRegistered) return
   ipcRegistered = true
 
-  registerModsIpc(mainWindow)
+  registerModsIpc(win)
   registerModsConfigIpc()
   registerModsProfilesIpc()
   registerModsReadmeIpc()
-  registerSavesIpc(mainWindow)
-  registerUe4ssIpc(mainWindow)
+  registerSavesIpc(win)
+  registerUe4ssIpc(win)
   registerGameIpc()
   registerSettingsIpc()
   registerLocaleIpc()
-  registerAppUpdateIpc(mainWindow)
+  registerAppUpdateIpc(win)
   registerConflictsIpc()
-  registerNexusIpc(mainWindow)
+  registerNexusIpc(win)
   registerSteamWorkshopIpc()
 
   // Logger IPC
@@ -81,14 +127,22 @@ function registerAllIpc(mainWindow) {
     app.quit()
   })
 
-  // Auto-start setting
+  // Auto-start setting. Electron's get/setLoginItemSettings are implemented
+  // on Windows/macOS only — on Linux they are silent no-ops, which left the
+  // toggle doing nothing and snapping back off on restart. Linux uses the XDG
+  // autostart convention instead: a .desktop file in ~/.config/autostart.
   ipcMain.handle('app:get-auto-start', () => {
+    if (process.platform === 'linux') return getLinuxAutoStart()
     return app.getLoginItemSettings().openAtLogin
   })
 
   ipcMain.handle('app:set-auto-start', (_, enabled) => {
     // Coerce to a real boolean — the renderer is the trust boundary, and the
     // sibling app:set-titlebar-theme handler applies the same `=== true` guard.
+    if (process.platform === 'linux') {
+      setLinuxAutoStart(enabled === true)
+      return
+    }
     app.setLoginItemSettings({ openAtLogin: enabled === true })
   })
 
@@ -319,7 +373,9 @@ if (!gotSingleInstanceLock) {
     app.setName('HZMM Manager')
 
     // Re-register auto-start with current exe path (handles rename/move)
-    if (app.getLoginItemSettings().openAtLogin) {
+    if (process.platform === 'linux') {
+      if (getLinuxAutoStart()) setLinuxAutoStart(true)
+    } else if (app.getLoginItemSettings().openAtLogin) {
       app.setLoginItemSettings({ openAtLogin: true })
     }
 

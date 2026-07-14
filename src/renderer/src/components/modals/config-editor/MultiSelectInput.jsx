@@ -9,7 +9,7 @@ import { parseLuaArray, serializeLuaArray } from '../../../utils/config-parser';
 // Storage stays the same Lua array literal so save/reload round-trips
 // through `parseLuaArray` / `serializeLuaArray`.
 
-export default function MultiSelectInput({ value, options, disabled, onChange }) {
+export default function MultiSelectInput({ value, options, disabled, onChange, noneLabel = 'None', selectedCountLabel = '{n} selected' }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -41,10 +41,10 @@ export default function MultiSelectInput({ value, options, disabled, onChange })
   };
 
   const summary = selectedSet.size === 0
-    ? '無'
+    ? noneLabel
     : selectedSet.size <= 2
       ? [...selectedSet].join(', ')
-      : `已選 ${selectedSet.size} 個`;
+      : selectedCountLabel.replace('{n}', String(selectedSet.size));
 
   return (
     <div ref={ref} className="relative w-full">

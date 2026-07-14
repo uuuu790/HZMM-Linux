@@ -8,6 +8,7 @@ import {
   analyzeArchiveStructure,
   validateArchiveLimits,
   resolveCollisionFreePath,
+  extractZip,
   MAX_TOTAL_UNCOMPRESSED_BYTES,
   MAX_ENTRY_COUNT,
 } from '../../src/main/services/archive.js'
@@ -185,5 +186,69 @@ describe('archive.resolveCollisionFreePath — basename collision', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+// Regression: archives produced by Windows built-in zip / PowerShell
+// Compress-Archive store backslash separators (the exact case
+// skipEntryNameValidation was turned on for). Extract-by-normalized-name used
+// to find no entry and "succeed" with zero files; bulk extract used to write
+// literal `a\b\c.pak` files on Linux. Fixtures are real zips (base64-embedded)
+// whose entry names contain backslashes.
+describe('archive.extractZip — backslash entry names', () => {
+  // Single entry: Mods\CoolMod_P.pak ("FAKE PAK CONTENT")
+  const PAK_ONLY_ZIP =
+    'UEsDBBQAAAAAAKkM7lx5Ht2kEAAAABAAAAASAAAATW9kc1xDb29sTW9kX1AucGFrRkFLRSBQQUsgQ09OVEVOVFBLAQIUAxQAAAAAAKkM7lx5Ht2kEAAAABAAAAASAAAAAAAAAAAAAACAAQAAAABNb2RzXENvb2xNb2RfUC5wYWtQSwUGAAAAAAEAAQBAAAAAQAAAAAAA'
+  // Two entries under HumanitZ\... (game-structure/hybrid layout)
+  const GAME_STRUCTURE_ZIP =
+    'UEsDBBQAAAAAAKkM7lyTR7zvBwAAAAcAAAAkAAAASHVtYW5pdFpcQ29udGVudFxQYWtzXH5tb2RzXENvb2wucGFrUEFLREFUQVBLAwQUAAAAAACpDO5c+R2jugYAAAAGAAAAOwAAAEh1bWFuaXRaXEJpbmFyaWVzXFdpbjY0XHVlNHNzXE1vZHNcQ29vbE1vZFxTY3JpcHRzXG1haW4ubHVhLS0gbHVhUEsBAhQDFAAAAAAAqQzuXJNHvO8HAAAABwAAACQAAAAAAAAAAAAAAIABAAAAAEh1bWFuaXRaXENvbnRlbnRcUGFrc1x+bW9kc1xDb29sLnBha1BLAQIUAxQAAAAAAKkM7lz5HaO6BgAAAAYAAAA7AAAAAAAAAAAAAACAAUkAAABIdW1hbml0WlxCaW5hcmllc1xXaW42NFx1ZTRzc1xNb2RzXENvb2xNb2RcU2NyaXB0c1xtYWluLmx1YVBLBQYAAAAAAgACALsAAACoAAAAAAA='
+
+  const writeFixture = (dir, b64) => {
+    const p = path.join(dir, 'fixture.zip')
+    fs.writeFileSync(p, Buffer.from(b64, 'base64'))
+    return p
+  }
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true })
+    .flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)])
+
+  it('pak-only: lands the pak at the destination root with real content', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hzmm-bszip-'))
+    try {
+      const zip = writeFixture(dir, PAK_ONLY_ZIP)
+      const dest = path.join(dir, 'out')
+      const analysis = await extractZip(zip, dest)
+      expect(analysis.type).toBe('pak-only')
+      const pak = path.join(dest, 'CoolMod_P.pak')
+      expect(fs.existsSync(pak)).toBe(true)
+      expect(fs.readFileSync(pak, 'utf-8')).toBe('FAKE PAK CONTENT')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('full extraction: restores the directory tree instead of literal backslash names', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hzmm-bszip-'))
+    try {
+      const zip = writeFixture(dir, GAME_STRUCTURE_ZIP)
+      const dest = path.join(dir, 'out')
+      await extractZip(zip, dest)
+      const rel = walk(dest).map(f => path.relative(dest, f)).sort()
+      expect(rel).toEqual([
+        path.join('HumanitZ', 'Binaries', 'Win64', 'ue4ss', 'Mods', 'CoolMod', 'Scripts', 'main.lua'),
+        path.join('HumanitZ', 'Content', 'Paks', '~mods', 'Cool.pak'),
+      ])
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('analysis dedupes an IoStore trio into one mod entry', () => {
+    const analysis = analyzeArchiveStructure(['X_P.pak', 'X_P.ucas', 'X_P.utoc'])
+    expect(analysis.mods).toEqual([{ name: 'X', modType: 'PAK' }])
+  })
+
+  it('classifies uppercase extensions the same as lowercase', () => {
+    const analysis = analyzeArchiveStructure(['MODS/BIGGUN.PAK'])
+    expect(analysis.type).toBe('pak-only')
   })
 })

@@ -75,7 +75,11 @@ function registerModsIpc(mainWindow) {
     const gamePath = configStore.get('gamePath')
     if (!gamePath) throw new Error('Game path not set')
 
-    const isPakMod = filename.endsWith('.pak') || filename.endsWith('.pak.disabled')
+    // Case-insensitive: Linux's fs is case-sensitive, so `FOO.PAK` arrives
+    // here verbatim — treating it as a UE4SS folder name sent the toggle down
+    // the wrong branch entirely.
+    const lowerName = filename.toLowerCase()
+    const isPakMod = lowerName.endsWith('.pak') || lowerName.endsWith('.pak.disabled')
 
     if (!isPakMod) {
       // UE4SS / Hybrid mod toggle — filename 是資料夾名
@@ -151,14 +155,14 @@ function registerModsIpc(mainWindow) {
     if (!filePath) throw new Error(`File not found: ${filename}`)
 
     let newPath
-    if (filename.endsWith('.pak.disabled')) {
+    if (lowerName.endsWith('.pak.disabled')) {
       newPath = filePath.replace('.disabled', '')
     } else {
       newPath = filePath + '.disabled'
     }
 
     fs.renameSync(filePath, newPath)
-    const pakNowEnabled = newPath.endsWith('.pak')
+    const pakNowEnabled = !newPath.toLowerCase().endsWith('.disabled')
 
     // Hybrid 反向連動：toggle PAK 時也 toggle 關聯的 UE4SS
     const ue4ssModsPath2 = getUe4ssModsPath(gamePath)
@@ -212,7 +216,8 @@ function registerModsIpc(mainWindow) {
     const gamePath = configStore.get('gamePath')
     if (!gamePath) throw new Error('Game path not set')
 
-    const isPakMod = filename.endsWith('.pak') || filename.endsWith('.pak.disabled')
+    const lowerName = filename.toLowerCase()
+    const isPakMod = lowerName.endsWith('.pak') || lowerName.endsWith('.pak.disabled')
 
     if (!isPakMod) {
       // UE4SS mod removal — filename 是資料夾名
@@ -317,7 +322,8 @@ function registerModsIpc(mainWindow) {
     for (const pp of allPaksPaths) {
       try {
         for (const f of fs.readdirSync(pp)) {
-          if (f.endsWith('.pak') || f.endsWith('.pak.disabled')) {
+          const fl = f.toLowerCase()
+          if (fl.endsWith('.pak') || fl.endsWith('.pak.disabled')) {
             // Strip .pak unconditionally then the _P suffix, mirroring the
             // archive-side mod-name normalization (archive.js). Using /_P\.pak$/
             // alone left the extension on plain non-_P paks, so they never matched.
@@ -362,9 +368,13 @@ function registerModsIpc(mainWindow) {
           totalFiles = (analysis.entryNames || []).filter(n => !n.endsWith('/')).length
         }
 
-        // Check each mod for existing conflicts
+        // Check each mod for existing conflicts. The existing-set entries had
+        // `_P` stripped case-insensitively; the archive-side mod.name keeps a
+        // lowercase `_p` (its strip is case-sensitive on purpose — rotate
+        // candidates depend on the original casing), so strip it again here
+        // or `CoolMod_p.pak` never gets flagged as already installed.
         for (const mod of mods) {
-          if (mod.modType === 'PAK' && existingPaks.has(mod.name.toLowerCase())) {
+          if (mod.modType === 'PAK' && existingPaks.has(mod.name.toLowerCase().replace(/_p$/, ''))) {
             mod.existing = true
           } else if (mod.modType === 'UE4SS' && existingUe4ss.has(mod.name.toLowerCase())) {
             mod.existing = true

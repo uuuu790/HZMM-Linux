@@ -71,10 +71,14 @@ function resolveCollisionFreePath(destPath) {
 }
 
 // 分析壓縮檔內部結構，判斷 mod 類型與安裝方式
+// Extension checks are case-insensitive: on Linux the filesystem won't paper
+// over a `MOD.PAK`, and misclassifying it as 'complex' dumps it into the game
+// root where it never loads.
 function analyzeArchiveStructure(entryNames) {
-  const pakFiles = entryNames.filter(n => n.endsWith('.pak') || n.endsWith('.ucas') || n.endsWith('.utoc'))
-  const luaFiles = entryNames.filter(n => n.endsWith('.lua'))
-  const dllFiles = entryNames.filter(n => n.endsWith('.dll'))
+  const hasExt = (n, ...exts) => { const l = n.toLowerCase(); return exts.some(x => l.endsWith(x)) }
+  const pakFiles = entryNames.filter(n => hasExt(n, '.pak', '.ucas', '.utoc'))
+  const luaFiles = entryNames.filter(n => hasExt(n, '.lua'))
+  const dllFiles = entryNames.filter(n => hasExt(n, '.dll'))
   const hasEnabledTxt = entryNames.some(n => path.basename(n) === 'enabled.txt')
   const hasModManifest = entryNames.some(n => path.basename(n) === 'modManifest.json')
 
@@ -99,10 +103,16 @@ function analyzeArchiveStructure(entryNames) {
   const readmeNames = new Set(['readme.md', 'readme.txt', 'readme', 'description.txt', 'info.txt'])
   const readmeFiles = entryNames.filter(n => readmeNames.has(path.basename(n).toLowerCase()))
 
-  // Build mod summary list for preview display
+  // Build mod summary list for preview display. Dedupe by name: an IoStore
+  // trio (X.pak + X.ucas + X.utoc) is ONE mod, not three — without this the
+  // preview lists it thrice and rotate/backup walks the same files repeatedly.
   const mods = []
+  const seenPakNames = new Set()
   for (const p of pakFiles) {
     const name = path.basename(p).replace(/\.(pak|ucas|utoc)$/i, '').replace(/_P$/, '')
+    const key = name.toLowerCase()
+    if (seenPakNames.has(key)) continue
+    seenPakNames.add(key)
     mods.push({ name, modType: 'PAK' })
   }
   // UE4SS mod folders: find folder containing Scripts/main.lua or main.lua
@@ -148,6 +158,40 @@ function analyzeArchiveStructure(entryNames) {
   return { type: 'complex', pakFiles, luaFiles, dllFiles, mods, readmeFiles }
 }
 
+// node-stream-zip keys entries by their RAW stored name and writes that raw
+// name to disk on bulk extract. Archives produced by Windows tools (built-in
+// zipper, PowerShell Compress-Archive — the very tools skipEntryNameValidation
+// exists for) use backslash separators, so on Linux:
+//   - zip.extract(<normalized name>, …) finds no entry and silently writes
+//     NOTHING (install "succeeds" with zero files landed);
+//   - zip.extract(null, destDir) writes literal files named `a\b\c.pak`.
+// Both helpers below therefore translate between the normalized names the rest
+// of the code works with and the raw names the zip actually contains.
+function rawNamesByNormalized(entryList) {
+  const map = new Map()
+  for (const e of entryList) map.set(e.name.replace(/\\/g, '/'), e.name)
+  return map
+}
+
+async function extractAllZipEntries(zip, entryList, destDir) {
+  if (!entryList.some(e => e.name.includes('\\'))) {
+    // Fast path: sane separators, let the library restore the tree itself.
+    await zip.extract(null, destDir)
+    return
+  }
+  for (const entry of entryList) {
+    const rel = entry.name.replace(/\\/g, '/')
+    // validateEntries already ran on the normalized names, so rel is in-tree.
+    const dest = path.join(destDir, rel)
+    if (entry.isDirectory) {
+      fs.mkdirSync(dest, { recursive: true })
+      continue
+    }
+    fs.mkdirSync(path.dirname(dest), { recursive: true })
+    await zip.extract(entry.name, dest)
+  }
+}
+
 async function extractZip(zipPath, destDir, analyzeOnly = false) {
   // skipEntryNameValidation: some zip tools (e.g. Windows built-in) produce backslash paths
   // which node-stream-zip rejects as "Malicious entry"
@@ -169,13 +213,14 @@ async function extractZip(zipPath, destDir, analyzeOnly = false) {
     fs.mkdirSync(destDir, { recursive: true })
 
     if (analysis.type === 'pak-only') {
+      const rawNames = rawNamesByNormalized(entryList)
       for (const pakFile of analysis.pakFiles) {
         const fileName = path.basename(pakFile)
         const target = resolveCollisionFreePath(path.join(destDir, fileName))
-        await zip.extract(pakFile, target)
+        await zip.extract(rawNames.get(pakFile) ?? pakFile, target)
       }
     } else {
-      await zip.extract(null, destDir)
+      await extractAllZipEntries(zip, entryList, destDir)
     }
 
     return analysis
@@ -300,7 +345,14 @@ async function extractRar(rarPath, destDir, analyzeOnly = false) {
 
   const list = extractor.getFileList()
   const fileHeaders = [...list.fileHeaders]
-  const entryNames = fileHeaders.map(h => h.name)
+  // Normalize to forward slashes (Windows-made RARs can carry backslashes) and
+  // mark directory entries with a trailing '/' the way zip names do — RAR flags
+  // directories in the header instead, and downstream consumers (preview's
+  // totalFiles filter) rely on the trailing-slash convention.
+  const entryNames = fileHeaders.map(h => {
+    const n = h.name.replace(/\\/g, '/')
+    return h.flags.directory && !n.endsWith('/') ? `${n}/` : n
+  })
 
   const analysis = analyzeArchiveStructure(entryNames)
 
@@ -317,14 +369,22 @@ async function extractRar(rarPath, destDir, analyzeOnly = false) {
   const extractor2 = await createExtractorFromFile({ filepath: rarPath, targetPath: destDir })
 
   if (analysis.type === 'pak-only') {
-    const extracted = extractor2.extract({ files: analysis.pakFiles })
+    // analysis.pakFiles hold normalized names; the extractor filter needs the
+    // RAW header names or a backslash-path RAR would match (and extract) nothing.
+    const rawNames = new Map(fileHeaders.map(h => [h.name.replace(/\\/g, '/'), h.name]))
+    const extracted = extractor2.extract({ files: analysis.pakFiles.map(n => rawNames.get(n) ?? n) })
     const files = [...extracted.files]
     // node-unrar-js extract 到 targetPath，但保留子目錄結構
     // 將深層 .pak 移到 destDir 根目錄
     for (const f of files) {
       if (f.fileHeader.flags.directory) continue
-      const extractedPath = path.join(destDir, f.fileHeader.name)
-      const rootPath = path.join(destDir, path.basename(f.fileHeader.name))
+      const normalized = f.fileHeader.name.replace(/\\/g, '/')
+      // The library may have written either the normalized tree or a literal
+      // backslash-named file, depending on the archive — probe both.
+      const treePath = path.join(destDir, ...normalized.split('/'))
+      const literalPath = path.join(destDir, f.fileHeader.name)
+      const extractedPath = fs.existsSync(treePath) ? treePath : literalPath
+      const rootPath = path.join(destDir, path.basename(normalized))
       // Only deep paks need moving to the root; a pak already at the root is
       // left in place (rootPath === extractedPath).
       if (extractedPath !== rootPath && fs.existsSync(extractedPath)) {
@@ -353,7 +413,7 @@ async function extractZipRaw(zipPath, destDir) {
     validateEntries(entryNames, destDir)
     validateArchiveLimits(entryList.map(e => e.size))
     fs.mkdirSync(destDir, { recursive: true })
-    await zip.extract(null, destDir)
+    await extractAllZipEntries(zip, entryList, destDir)
     return true
   } finally {
     await zip.close()

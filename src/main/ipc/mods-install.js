@@ -58,13 +58,18 @@ function findUe4ssFolders(dir) {
   const results = []
   for (const entry of fs.readdirSync(dir)) {
     const full = path.join(dir, entry)
-    if (!fs.statSync(full).isDirectory()) continue
+    // Skip entries that can't be stat'd (broken symlink in a hand-made zip)
+    // instead of aborting the whole install.
+    let stat
+    try { stat = fs.statSync(full) } catch { continue }
+    if (!stat.isDirectory()) continue
     const hasScripts = fs.existsSync(path.join(full, 'Scripts', 'main.lua'))
     const hasMain = fs.existsSync(path.join(full, 'main.lua'))
     // UE4SS cppmod entry point is `<Mod>/dlls/main.dll`; first-level .dll
-    // is a fallback in case the zip was packed unusually.
+    // is a fallback in case the zip was packed unusually. Case-insensitive:
+    // Linux won't paper over `MOD.DLL`.
     const hasDll = fs.existsSync(path.join(full, 'dlls', 'main.dll'))
-      || fs.readdirSync(full).some(f => f.endsWith('.dll'))
+      || fs.readdirSync(full).some(f => f.toLowerCase().endsWith('.dll'))
     if (hasScripts || hasMain || hasDll) {
       results.push({ name: entry, path: full })
     } else {
@@ -85,7 +90,17 @@ function rotateModsToBackup(gamePath, mods, backupRoot) {
 
   for (const mod of mods) {
     if (mod.modType === 'PAK') {
-      const candidates = [mod.name + '_P.pak', mod.name + '.pak']
+      // IoStore mods ship a trio (X.pak + X.ucas + X.utoc). Rotating only the
+      // .pak left stale .ucas/.utoc behind: the fresh extract then collision-
+      // renamed the new containers to "X (2).ucas", leaving a mismatched trio
+      // that breaks the mod. Only .pak gets toggled to .disabled, but probing
+      // the suffix on the others is harmless (it just won't exist).
+      const candidates = []
+      for (const base of [mod.name + '_P', mod.name]) {
+        for (const ext of ['.pak', '.ucas', '.utoc']) {
+          candidates.push(base + ext)
+        }
+      }
       for (const pp of allPaksPaths) {
         for (const pakName of candidates) {
           for (const suffix of ['', '.disabled']) {
@@ -273,7 +288,8 @@ async function installModsLocked(filePaths, mainWindow) {
                 return results
               }
               for (const f of walkFiles(tempDir)) {
-                if (f.endsWith('.pak') || f.endsWith('.ucas') || f.endsWith('.utoc')) {
+                const lower = f.toLowerCase()
+                if (lower.endsWith('.pak') || lower.endsWith('.ucas') || lower.endsWith('.utoc')) {
                   fs.copyFileSync(f, path.join(paksPath, path.basename(f)))
                 }
               }
@@ -352,6 +368,17 @@ async function installModsLocked(filePaths, mainWindow) {
         if (ue4ssModsPath) {
           for (const mod of analysis.mods) {
             if (mod.modType === 'UE4SS') {
+              // The scanner (and toggle) treat enabled.txt as the enabled
+              // flag, while the registry write below marks the mod `: 1` —
+              // without creating enabled.txt too, a fresh install shows as
+              // DISABLED in the UI while UE4SS actually loads it.
+              const destDir = path.join(ue4ssModsPath, mod.name)
+              if (fs.existsSync(destDir)) {
+                const enabledFile = path.join(destDir, 'enabled.txt')
+                try {
+                  if (!fs.existsSync(enabledFile)) fs.writeFileSync(enabledFile, '', 'utf-8')
+                } catch { /* best-effort — registry sync below still applies */ }
+              }
               syncUe4ssModRegistry(ue4ssModsPath, mod.name, true)
             }
           }

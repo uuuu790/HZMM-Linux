@@ -54,7 +54,14 @@ function parseLibraryFolders(steamPath) {
   const vdfPath = join(steamPath, 'steamapps', 'libraryfolders.vdf')
   if (!fs.existsSync(vdfPath)) return [steamPath]
 
-  const content = fs.readFileSync(vdfPath, 'utf-8')
+  // Unreadable/corrupt vdf must not throw: game:detect-path runs inside the
+  // renderer's startup init chain, and an exception there wedges the splash.
+  let content
+  try {
+    content = fs.readFileSync(vdfPath, 'utf-8')
+  } catch {
+    return [steamPath]
+  }
   const paths = [steamPath]
 
   // VDF library paths on Linux are forward-slash style and need no unescaping.
@@ -161,6 +168,11 @@ function getUe4ssModsPath(gamePath) {
   // as on Windows — Wine doesn't relocate game-relative paths.
   const candidates = [
     join(gamePath, 'HumanitZ', 'Binaries', 'Win64', 'ue4ss', 'Mods'),
+    // Legacy/flat UE4SS layout: UE4SS.dll + Mods/ directly in Binaries/Win64.
+    // checkUe4ssStatus reports this layout as "installed", so mod operations
+    // must be able to resolve it too — omitting it made the UE4SS tab say
+    // "installed" while every install/toggle failed with "not found".
+    join(gamePath, 'HumanitZ', 'Binaries', 'Win64', 'Mods'),
     join(gamePath, 'ue4ss', 'Mods'),
     join(gamePath, 'Mods')
   ]
@@ -184,13 +196,20 @@ function getSteamInstallType() {
 }
 
 // Proton's per-game Wine prefix lives under
-// steamapps/compatdata/<appid>/pfx. Surfaced for diagnostic UI; mod files
-// go in the real Linux game directory, not inside the prefix.
+// steamapps/compatdata/<appid>/pfx — in whichever LIBRARY the game is
+// installed in, not necessarily the default Steam root. Mod files go in the
+// real Linux game directory, not inside the prefix; the prefix matters for
+// data the Windows build keeps under %LOCALAPPDATA% (save games).
 function getProtonPrefix() {
   const steamPath = getSteamPath()
   if (!steamPath) return null
-  const prefix = join(steamPath, 'steamapps', 'compatdata', HUMANITZ_APP_ID, 'pfx')
-  return fs.existsSync(prefix) ? prefix : null
+  for (const libPath of parseLibraryFolders(steamPath)) {
+    const prefix = join(libPath, 'steamapps', 'compatdata', HUMANITZ_APP_ID, 'pfx')
+    try {
+      if (fs.existsSync(prefix)) return prefix
+    } catch { /* unreadable library — try the next one */ }
+  }
+  return null
 }
 
 function fetchGameVersionFromSteamNews() {

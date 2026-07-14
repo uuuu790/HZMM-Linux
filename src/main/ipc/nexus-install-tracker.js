@@ -135,6 +135,12 @@ export function getInstalledMods() {
     logger.warn(`nexus getInstalledMods scanMods failed: ${err.message}`)
     return raw
   }
+  // An EMPTY scan is indistinguishable from "game path unset / library drive
+  // unmounted" (scanMods returns [] without throwing in those cases). Pruning
+  // against it would wipe every receipt permanently over a transient path
+  // problem — opening the Nexus tab once was enough. Only prune when the scan
+  // actually saw mods.
+  if (localMods.length === 0) return raw
   const presentKeys = new Set(
     localMods.map(localModKey).filter(Boolean)
   )

@@ -26,6 +26,51 @@ export function resolveI18n(obj, lang) {
   return obj[lang] || obj['en'] || Object.values(obj)[0] || '';
 }
 
+// Find the first occurrence of `token` that is NOT inside a quoted string.
+// Used for block-comment detection: `A = "see --[[docs"` must not flip the
+// parser into block-comment mode (which used to swallow every line below it).
+function findTokenOutsideQuotes(s, token) {
+  let inQuote = false;
+  let quoteChar = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inQuote) {
+      if (c === '\\' && i + 1 < s.length) { i++; continue; }
+      if (c === quoteChar) { inQuote = false; quoteChar = null; }
+    } else {
+      if (c === '"' || c === "'") { inQuote = true; quoteChar = c; }
+      else if (s.startsWith(token, i)) return i;
+    }
+  }
+  return -1;
+}
+
+// Escape / unescape a quoted config value. Only the two sequences we emit
+// (`\\` and the active quote char) are translated, so unknown escapes like
+// `\n` round-trip verbatim instead of being reinterpreted.
+export function escapeQuoted(s, q) {
+  let out = '';
+  for (const c of String(s)) {
+    if (c === '\\' || c === q) out += '\\';
+    out += c;
+  }
+  return out;
+}
+
+function unescapeQuoted(s, q) {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\' && i + 1 < s.length && (s[i + 1] === '\\' || s[i + 1] === q)) {
+      out += s[i + 1];
+      i++;
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
 // Find index of inline Lua `-- comment` while skipping content inside
 // quoted strings. Returns -1 if no inline comment present. Mirrors the
 // original `/(\s+--\s*.*)$/` semantics: requires whitespace before `--`.
@@ -59,9 +104,11 @@ export function parseConfigFile(text) {
     // 空行
     if (trimmed === '') { entries.push({ type: 'blank', raw: line }); continue; }
 
-    // Lua block comment --[[ ... ]]
-    if (trimmed.includes('--[[') && !inBlockComment) {
-      const openIdx = trimmed.indexOf('--[[');
+    // Lua block comment --[[ ... ]] — quote-aware, so a `--[[` INSIDE a
+    // quoted value doesn't flip comment mode for the rest of the file.
+    const blockOpenIdx = inBlockComment ? -1 : findTokenOutsideQuotes(trimmed, '--[[')
+    if (blockOpenIdx !== -1) {
+      const openIdx = blockOpenIdx;
       const closeIdx = trimmed.indexOf(']]', openIdx + 4);
       if (closeIdx !== -1) {
         // 單行 block comment — 嘗試提取 section 名稱 --[[▓▓[ NAME ]▓▓--]]
@@ -135,12 +182,17 @@ export function parseConfigFile(text) {
         hadComma = true;
       }
 
-      // 3. 最後判斷引號、取裸值。
-      const isQuoted = (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"));
-      const bareValue = isQuoted ? value.slice(1, -1) : value;
+      // 3. 最後判斷引號、取裸值。記錄引號字元並反轉義,serialize 時以同一
+      //    字元 + 轉義寫回 — 否則單引號字串會被改成雙引號,值內的引號也會
+      //    原樣輸出,存檔直接產生非法 Lua。
+      const quoteChar = (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) ? '"'
+        : (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) ? "'"
+          : null;
+      const isQuoted = quoteChar !== null;
+      const bareValue = isQuoted ? unescapeQuoted(value.slice(1, -1), quoteChar) : value;
       // 有尾逗號或塊註解 → 視為 Lua 格式。
       const isLua = hadComma || text.includes('--[[');
-      entries.push({ type: 'keyval', raw: line, key: kvMatch[1], value: bareValue, isQuoted, format: isLua ? 'lua' : 'ini', inlineDesc, trailing, hadComma });
+      entries.push({ type: 'keyval', raw: line, key: kvMatch[1], value: bareValue, isQuoted, quoteChar, format: isLua ? 'lua' : 'ini', inlineDesc, trailing, hadComma });
       continue;
     }
 
@@ -155,7 +207,11 @@ export function serializeConfig(entries) {
   return entries.map((e) => {
     if (e.type === 'keyval') {
       const indent = e.raw.match(/^(\s*)/)?.[1] || '';
-      const val = e.isQuoted ? `"${e.value}"` : e.value;
+      // Preserve the original quote char (entries predating quoteChar fall
+      // back to `"`), escaping backslashes and embedded quotes — an
+      // unescaped `"` inside the value used to serialize to invalid Lua.
+      const q = e.quoteChar || '"';
+      const val = e.isQuoted ? `${q}${escapeQuoted(e.value, q)}${q}` : e.value;
       // 從 parse 時記錄的 hadComma 還原尾逗號 — 不能再靠 e.raw 結尾判斷，
       // 因為有 inline comment 時原始行結尾是註解而非逗號（會誤掉逗號）。
       const comma = e.hadComma ? ',' : '';
@@ -194,7 +250,7 @@ export function guessValueType(val) {
 export function appendKeyval(entries, key, value, options = {}) {
   const { isQuoted = false, format = 'lua', sectionHint = null } = options;
   const valueStr = String(value);
-  const literal = isQuoted ? `"${valueStr}"` : valueStr;
+  const literal = isQuoted ? `"${escapeQuoted(valueStr, '"')}"` : valueStr;
   const trailingComma = format === 'lua' ? ',' : '';
   const newEntry = {
     type: 'keyval',
@@ -202,6 +258,7 @@ export function appendKeyval(entries, key, value, options = {}) {
     key,
     value: valueStr,
     isQuoted,
+    quoteChar: isQuoted ? '"' : null,
     format,
     // serialize 改用 hadComma 還原逗號，故新增 entry 也要設（lua → 有逗號）。
     hadComma: format === 'lua',

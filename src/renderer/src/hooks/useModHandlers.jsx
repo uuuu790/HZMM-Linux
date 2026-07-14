@@ -103,11 +103,19 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
   // --- Uninstall ---
   const handleUninstallLocalMod = useCallback((filename) => {
     const doRemove = async () => {
-      await window.api.mods.remove(filename);
-      await refreshMods();
-      if (activeModuleId === filename) setActiveModuleId(null);
-      notifyManualChange();
-      addToast(t.toastUninstalled, 'warning');
+      // Without a catch a failed remove (EACCES, file in use) rejected
+      // unhandled: the confirm dialog had already closed, so the user got
+      // ZERO feedback and the mod stayed listed.
+      try {
+        await window.api.mods.remove(filename);
+        await refreshMods();
+        if (activeModuleId === filename) setActiveModuleId(null);
+        notifyManualChange();
+        addToast(t.toastUninstalled, 'warning');
+      } catch (err) {
+        console.error('Uninstall failed:', err);
+        addToast(`${t.toastUninstallFailed || 'Uninstall failed'}: ${err?.message || err}`, 'error');
+      }
     };
 
     // 找出 hybrid 關聯模組名稱
@@ -159,7 +167,11 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
       setPreviewData(previews);
     } catch (err) {
       console.error('Preview failed:', err);
+      // Close the dialog on failure — an empty non-loading preview renders as
+      // a contentless shell with no buttons, stuck until manually dismissed.
+      setShowPreview(false);
       setPreviewData([]);
+      setPendingInstallPaths([]);
       addToast(`${t.toastInstallFailed || 'Install failed'}: ${err.message || err}`, 'error');
     } finally {
       setPreviewLoading(false);
@@ -242,12 +254,22 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
   }, [persistSetting]);
 
   // --- Batch Operations ---
+  // Hybrid pairs appear as TWO list entries (UE4SS folder + linked PAK) while
+  // mods:toggle / mods:remove cascade BOTH on disk. When the user selected
+  // both halves, act only through the UE4SS folder and skip the PAK: hitting
+  // the PAK afterwards used to either re-flip the pair to the OPPOSITE of the
+  // requested state (with a success toast) or throw on the stale filename.
+  const pakHandledBySelectedFolder = useCallback((mod) => {
+    return mod?.type === 'PAK' && mod.linkedUe4ss && selectedMods.has(mod.linkedUe4ss);
+  }, [selectedMods]);
+
   const handleBatchToggle = useCallback(async (enable) => {
     if (!window.api || selectedMods.size === 0) return;
     const run = async () => {
       let failed = 0;
       for (const filename of selectedMods) {
         const mod = modules.find(m => m.filename === filename);
+        if (pakHandledBySelectedFolder(mod)) continue;
         if (mod && mod.enabled !== enable) {
           // One locked/in-use file (common while the game is running) must not
           // abort the whole batch and leave it silently half-applied.
@@ -267,13 +289,15 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
     } else {
       await run();
     }
-  }, [selectedMods, modules, t, refreshMods, addToast, notifyManualChange, isGameRunning, showConfirm]);
+  }, [selectedMods, modules, t, refreshMods, addToast, notifyManualChange, isGameRunning, showConfirm, pakHandledBySelectedFolder]);
 
   const handleBatchRemove = useCallback(() => {
     if (selectedMods.size === 0) return;
     const run = async () => {
       let failed = 0;
       for (const filename of selectedMods) {
+        const mod = modules.find(m => m.filename === filename);
+        if (pakHandledBySelectedFolder(mod)) continue;
         try { await window.api.mods.remove(filename); }
         catch (err) { console.error(`Batch remove failed: ${filename}`, err); failed++; }
       }
@@ -289,7 +313,7 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
     } else {
       showConfirm(t.confirmBatchDeleteTitle, t.confirmBatchDeleteDesc, run);
     }
-  }, [selectedMods, t, showConfirm, refreshMods, addToast, notifyManualChange, isGameRunning]);
+  }, [selectedMods, modules, t, showConfirm, refreshMods, addToast, notifyManualChange, isGameRunning, pakHandledBySelectedFolder]);
 
   // --- Rename (Custom Display Name) ---
   const handleRenameMod = useCallback(async (modId, customName) => {

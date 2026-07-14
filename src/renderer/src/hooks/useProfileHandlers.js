@@ -47,10 +47,29 @@ export function useProfileHandlers({ addToast, showConfirm, closeConfirm, t, mod
 
   const applyProfileNow = useCallback(async (profile) => {
     const profileSet = normalizeProfileFilenames(profile.enabledModFilenames);
-    for (const mod of modules) {
+    // Re-scan instead of using the render-time `modules` snapshot: callers
+    // like "download missing & apply" install mods right before applying, and
+    // a stale list would skip them entirely (or toggle from stale state).
+    const mods = (await window.api.mods.scan()) || [];
+    // A hybrid pair appears as TWO list entries (UE4SS folder + linked PAK)
+    // but mods:toggle cascades BOTH on disk. Toggle each pair exactly once,
+    // through its UE4SS folder — hitting the stale PAK entry afterwards used
+    // to throw (its on-disk name had already flipped) and abort the whole
+    // apply halfway with no error surfaced.
+    const cascadedPaks = new Set();
+    for (const mod of mods) {
+      if (mod.type === 'UE4SS' && Array.isArray(mod.linkedPaks)) {
+        for (const p of mod.linkedPaks) cascadedPaks.add(normalizeFilename(p));
+      }
+    }
+    const failed = [];
+    for (const mod of mods) {
+      if (mod.type === 'PAK' && cascadedPaks.has(normalizeFilename(mod.filename))) continue;
       const shouldBeEnabled = modIsInProfile(profileSet, mod);
       if (mod.enabled !== shouldBeEnabled) {
-        await window.api.mods.toggle(mod.filename);
+        // One locked/vanished file must not abort the rest of the profile.
+        try { await window.api.mods.toggle(mod.filename); }
+        catch (err) { console.error(`Profile toggle failed: ${mod.filename}`, err); failed.push(mod.filename); }
       }
     }
     try {
@@ -61,8 +80,12 @@ export function useProfileHandlers({ addToast, showConfirm, closeConfirm, t, mod
     await refreshMods();
     setActiveProfileId(profile.id);
     persistSetting('activeProfileId', profile.id);
-    addToast(t.toastProfileApplied, 'success');
-  }, [modules, refreshMods, persistSetting, t, addToast]);
+    if (failed.length > 0) {
+      addToast(`${t.toastBatchFailed || 'Some mods could not be changed'} (${failed.length})`, 'error');
+    } else {
+      addToast(t.toastProfileApplied, 'success');
+    }
+  }, [refreshMods, persistSetting, t, addToast]);
 
   const handleApplyProfile = useCallback(async (profileId) => {
     if (!window.api || applyingProfileId) return;
@@ -84,8 +107,15 @@ export function useProfileHandlers({ addToast, showConfirm, closeConfirm, t, mod
       return;
     }
     setApplyingProfileId(profileId);
-    try { await applyProfileNow(profile); } finally { setApplyingProfileId(null); }
-  }, [applyingProfileId, profiles, modules, applyProfileNow]);
+    try { await applyProfileNow(profile); }
+    catch (err) {
+      // Surface instead of letting the rejection vanish — a silent failure
+      // here leaves the profile half-applied with no feedback at all.
+      console.error('Profile apply failed:', err);
+      addToast(`${t.toastProfileApplyFailed || 'Failed to apply profile'}: ${err?.message || err}`, 'error');
+    }
+    finally { setApplyingProfileId(null); }
+  }, [applyingProfileId, profiles, modules, applyProfileNow, addToast, t]);
 
   // Modal actions:
   const importDownloadAndApply = useCallback(async () => {
@@ -186,7 +216,10 @@ export function useProfileHandlers({ addToast, showConfirm, closeConfirm, t, mod
       try {
         const text = await file.text();
         const imported = JSON.parse(text);
-        if (!imported.name || !imported.enabledModFilenames) {
+        // enabledModFilenames must be a real array — a truthiness check let
+        // malformed JSON ({"enabledModFilenames": {...}}) import fine and then
+        // blow up with ".map is not a function" when applied.
+        if (!imported.name || !Array.isArray(imported.enabledModFilenames)) {
           addToast(t.toastProfileImportError, 'error');
           return;
         }

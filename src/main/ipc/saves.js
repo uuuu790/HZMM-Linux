@@ -4,14 +4,29 @@ import path from 'path'
 import configStore from '../services/config-store.js'
 import logger from '../services/logger.js'
 import { isPathWithin, assertSafeSegment } from '../services/path-safety.js'
+import { getProtonPrefix } from '../services/steam-detector.js'
+
+// The Windows build keeps saves under %LOCALAPPDATA%. On Linux the game runs
+// through Proton, so that same tree lives inside the game's Wine prefix at
+// drive_c/users/steamuser/AppData/Local. LOCALAPPDATA is still probed first
+// for the (unusual) case of the manager itself running under Wine.
+function getSaveRoots() {
+  const roots = []
+  if (process.env.LOCALAPPDATA) roots.push(process.env.LOCALAPPDATA)
+  const prefix = getProtonPrefix()
+  if (prefix) {
+    roots.push(path.join(prefix, 'drive_c', 'users', 'steamuser', 'AppData', 'Local'))
+  }
+  return roots
+}
 
 function getSavePath() {
-  const localAppData = process.env.LOCALAPPDATA
-  if (!localAppData) return null
-  const primary = path.join(localAppData, 'HumanitZ', 'Saved', 'SaveGames', 'SaveList', 'Default')
-  if (fs.existsSync(primary)) return primary
-  const fallback = path.join(localAppData, 'TSSGame', 'Saved', 'SaveGames')
-  if (fs.existsSync(fallback)) return fallback
+  for (const root of getSaveRoots()) {
+    const primary = path.join(root, 'HumanitZ', 'Saved', 'SaveGames', 'SaveList', 'Default')
+    if (fs.existsSync(primary)) return primary
+    const fallback = path.join(root, 'TSSGame', 'Saved', 'SaveGames')
+    if (fs.existsSync(fallback)) return fallback
+  }
   return null
 }
 

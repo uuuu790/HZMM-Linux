@@ -178,10 +178,11 @@ function scanMods() {
         try { stat = fs.statSync(filePath) } catch { continue }
         if (!stat.isFile()) continue
 
-        const isPak = file.endsWith('.pak')
-        const isDisabled = file.endsWith('.pak.disabled')
-
+        // Case-insensitive: a `FOO.PAK` copied in by hand (or by an archive
+        // with uppercase names) must still show up in the mod list on Linux.
         const baseLower = file.toLowerCase()
+        const isDisabled = baseLower.endsWith('.pak.disabled')
+        const isPak = baseLower.endsWith('.pak')
         if (baseLower.startsWith('pakchunk') || baseLower.startsWith('global')) continue
 
         if (isPak || isDisabled) {

@@ -50,11 +50,18 @@ export function registerModsReadmeIpc() {
     if (ue4ssModsPath) {
       const modDir = path.join(ue4ssModsPath, modFilename)
       if (fs.existsSync(modDir)) {
+        // Match candidates against the ACTUAL directory listing, case-
+        // insensitively: probing fixed-case names (README/readme) finds
+        // `Readme.txt` on Windows' fs but misses it on Linux.
+        const actualByLower = new Map()
+        try {
+          for (const f of fs.readdirSync(modDir)) actualByLower.set(f.toLowerCase(), f)
+        } catch { /* unreadable dir — fall through to saved readmes */ }
         for (const name of readmeNames) {
-          const readmePath = path.join(modDir, name)
-          if (fs.existsSync(readmePath)) {
-            try { return { filename: name, content: normalizeReadme(fs.readFileSync(readmePath, 'utf-8')) } } catch { /* fall through */ }
-          }
+          const actual = actualByLower.get(name.toLowerCase())
+          if (!actual) continue
+          const readmePath = path.join(modDir, actual)
+          try { return { filename: actual, content: normalizeReadme(fs.readFileSync(readmePath, 'utf-8')) } } catch { /* fall through */ }
         }
       }
     }

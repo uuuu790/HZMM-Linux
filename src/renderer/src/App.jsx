@@ -282,29 +282,36 @@ export default function App() {
         return;
       }
 
-      await Promise.all([
-        window.api.locale.getPreference().then(v => setLang(v)),
-        window.api.locale.getSupported().then(v => setSupportedLocales(v)),
-        window.api.settings.get('darkMode', true).then(v => { setIsDark(v); window.api?.system?.setTitleBarTheme(v); document.documentElement.classList.toggle('dark', v); }),
-        window.api.settings.get('themeId', 'ember').then(v => setThemeId(v)),
-        window.api.settings.get('minimizeToTray', true).then(v => setMinimizeToTray(v)),
-        window.api.settings.get('skipInstallPreview', false).then(v => setSkipInstallPreview(!!v)),
-        window.api.settings.get('uiZoom', 1).then(v => setUiZoom(clampZoom(v))),
-        window.api.system.getAutoStart().then(v => setAutoStart(v)).catch(() => {}),
-        initProfiles(),
-        initGame(),
-        initVersion(),
-        initBackups(),
-        initMods(),
-        // Minimum splash display time
-        new Promise(r => setTimeout(r, 3000)),
-      ]);
-
-      // Dismiss HTML splash
-      const splash = document.getElementById('splash-screen');
-      if (splash) {
-        splash.classList.add('exit');
-        setTimeout(() => splash.remove(), 600);
+      try {
+        await Promise.all([
+          window.api.locale.getPreference().then(v => setLang(v)),
+          window.api.locale.getSupported().then(v => setSupportedLocales(v)),
+          window.api.settings.get('darkMode', true).then(v => { setIsDark(v); window.api?.system?.setTitleBarTheme(v); document.documentElement.classList.toggle('dark', v); }),
+          window.api.settings.get('themeId', 'ember').then(v => setThemeId(v)),
+          window.api.settings.get('minimizeToTray', true).then(v => setMinimizeToTray(v)),
+          window.api.settings.get('skipInstallPreview', false).then(v => setSkipInstallPreview(!!v)),
+          window.api.settings.get('uiZoom', 1).then(v => setUiZoom(clampZoom(v))),
+          window.api.system.getAutoStart().then(v => setAutoStart(v)).catch(() => {}),
+          initProfiles(),
+          initGame(),
+          initVersion(),
+          initBackups(),
+          initMods(),
+          // Minimum splash display time
+          new Promise(r => setTimeout(r, 3000)),
+        ]);
+      } catch (err) {
+        // One failed init call (unreadable Steam vdf, permission error on a
+        // mod dir, …) must not strand the user on the splash screen forever —
+        // the app is still usable, individual panels show their own errors.
+        console.error('Init failed (continuing to UI):', err);
+      } finally {
+        // Dismiss HTML splash
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+          splash.classList.add('exit');
+          setTimeout(() => splash.remove(), 600);
+        }
       }
     }
     init();

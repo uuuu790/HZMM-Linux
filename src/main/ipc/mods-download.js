@@ -62,9 +62,13 @@ async function nexusApiRequest(endpoint, apiKey) {
     const req = https.default.get(`https://api.nexusmods.com/v1${endpoint}`, {
       headers: { 'apikey': apiKey, 'User-Agent': `HZMM/${app.getVersion()}` }
     }, (res) => {
-      let data = ''
-      res.on('data', chunk => { data += chunk })
+      // Collect raw buffers and decode ONCE at the end — per-chunk toString
+      // corrupts multi-byte UTF-8 sequences that straddle chunk boundaries
+      // (CJK account/file names turned into U+FFFD).
+      const chunks = []
+      res.on('data', chunk => { chunks.push(chunk) })
       res.on('end', () => {
+        const data = Buffer.concat(chunks).toString('utf-8')
         if (res.statusCode === 200) {
           try { resolve(JSON.parse(data)) } catch { reject(new Error('Invalid API response')) }
         } else if (res.statusCode === 401) {
@@ -87,23 +91,31 @@ async function nexusApiRequest(endpoint, apiKey) {
   })
 }
 
+// Returns { url, name, fileId, version }. fileId is the file that will
+// actually be downloaded (the caller's pin, or the resolved latest when no
+// pin was given); version is known only when the latest file was resolved via
+// files.json, else null. Callers recording install receipts must use THESE
+// values, not their original request — recording a delisted pin makes the
+// update checker blind to that mod forever.
 async function resolveNexusDownloadUrl(nexusInfo, apiKey) {
   let fileId = nexusInfo.fileId
+  let version = null
   // If no file_id, get the latest main file
   if (!fileId) {
     const filesData = await nexusApiRequest(`/games/${nexusInfo.game}/mods/${nexusInfo.modId}/files.json`, apiKey)
     const mainFiles = (filesData.files || []).filter(f => f.category_id === 1) // 1 = Main files
     const allFiles = mainFiles.length > 0 ? mainFiles : (filesData.files || [])
     if (allFiles.length === 0) throw new Error('No files found for this mod')
-    // Pick the latest file
+    // Pick the latest file (V1 uploaded_timestamp is a unix timestamp)
     allFiles.sort((a, b) => (b.uploaded_timestamp || 0) - (a.uploaded_timestamp || 0))
     fileId = allFiles[0].file_id
+    version = allFiles[0].version || null
     logger.info(`Nexus: resolved latest file_id=${fileId} for mod ${nexusInfo.modId}`)
   }
   // Get download links
   const links = await nexusApiRequest(`/games/${nexusInfo.game}/mods/${nexusInfo.modId}/files/${fileId}/download_link.json`, apiKey)
   if (!links || links.length === 0) throw new Error('No download links returned from Nexus API')
-  return { url: links[0].URI, name: links[0].name || `nexus_mod_${nexusInfo.modId}_${fileId}` }
+  return { url: links[0].URI, name: links[0].name || `nexus_mod_${nexusInfo.modId}_${fileId}`, fileId, version }
 }
 
 async function downloadAndInstallFromUrl(url, mainWindow) {

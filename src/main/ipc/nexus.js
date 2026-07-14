@@ -16,6 +16,7 @@
 import { ipcMain } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import crypto from 'crypto'
 import configStore from '../services/config-store.js'
 import logger from '../services/logger.js'
 import { nexusApiRequest, resolveNexusDownloadUrl, downloadAndInstallFromUrl, isAllowedModUrl, ALLOWED_MOD_HOSTS } from './mods-download.js'
@@ -61,9 +62,13 @@ function registerNexusIpc(mainWindow) {
     const apiKey = configStore.get('nexusApiKey')
     if (!apiKey) return { ok: false, reason: 'no-key' }
     try {
-      const hit = cacheGet('validate')
+      // The cache key carries a fingerprint of the API key: a bare 'validate'
+      // key kept serving the PREVIOUS key's identity/premium verdict for the
+      // whole TTL after the user pasted a new key in Settings.
+      const cacheKey = `validate:${crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 16)}`
+      const hit = cacheGet(cacheKey)
       const data = hit || await nexusApiRequest('/users/validate.json', apiKey)
-      if (!hit) cacheSet('validate', data, CACHE_TTL.validate)
+      if (!hit) cacheSet(cacheKey, data, CACHE_TTL.validate)
       if (!data.is_premium) {
         return { ok: false, reason: 'not-premium', name: data.name }
       }
@@ -148,8 +153,12 @@ function registerNexusIpc(mainWindow) {
   const installInFlight = new Set()
   ipcMain.handle('nexus:install-file', async (_, modId, fileId, version, fallbackToLatest = false) => {
     if (!Number.isInteger(modId) || modId <= 0) throw new Error('Invalid mod id')
-    if (!Number.isInteger(fileId) || fileId <= 0) throw new Error('Invalid file id')
-    const lockKey = `${modId}:${fileId}`
+    // fileId may legitimately be null: receipts written by nexus:install-mod
+    // carry fileId=null ("latest main file"), and profile auto-download replays
+    // them through this handler. resolveNexusDownloadUrl treats null as
+    // "resolve the latest main file".
+    if (fileId != null && (!Number.isInteger(fileId) || fileId <= 0)) throw new Error('Invalid file id')
+    const lockKey = `${modId}:${fileId ?? 'latest'}`
     if (installInFlight.has(lockKey)) throw new Error('Install already in progress for this file')
     installInFlight.add(lockKey)
     try {
@@ -188,7 +197,7 @@ function registerNexusIpc(mainWindow) {
       // Unique temp SUBDIR per download so concurrent installs never share a
       // path (and cleanup only removes its own dir), while preserving the real
       // filename — important for .pak mods whose _P suffix affects load order.
-      const tempDir = path.join(configStore.getConfigDir(), 'temp', `dl_${modId}_${fileId}_${Date.now()}`)
+      const tempDir = path.join(configStore.getConfigDir(), 'temp', `dl_${modId}_${fileId ?? 'latest'}_${Date.now()}`)
       const tempPath = path.join(tempDir, filename)
       fs.mkdirSync(tempDir, { recursive: true })
 
@@ -201,7 +210,15 @@ function registerNexusIpc(mainWindow) {
         const result = await installMods([tempPath], mainWindow)
         try { fs.rmSync(tempDir, { recursive: true, force: true }) } catch { /* temp already gone */ }
         const landed = flattenLandedMods(result)
-        recordInstall(modId, fileId, landed, typeof version === 'string' ? version : null)
+        // Record what actually LANDED, not what was asked for. After a
+        // fallback (pinned file delisted) the download is a different file —
+        // recording the dead pin would make evaluateOutdated() come up empty
+        // for this mod forever, and profiles re-exported from the receipt
+        // would re-pin the dead file. resolveNexusDownloadUrl reports the
+        // concrete fileId (and version when it resolved "latest") it served.
+        const landedFileId = resolved.fileId ?? fileId
+        const landedVersion = resolved.version ?? (typeof version === 'string' ? version : null)
+        recordInstall(modId, landedFileId, landed, landedVersion)
         // Return an object, not the bare install array: structured clone drops
         // custom props off arrays over IPC, and the renderer needs fellBackToLatest
         // to warn when a profile auto-download grabbed a different version.

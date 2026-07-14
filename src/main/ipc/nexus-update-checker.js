@@ -129,7 +129,12 @@ export async function checkUpdates(force = false) {
     }
   }
 
-  const payload = { checkedAt: Date.now(), results }
+  // A round where EVERY query failed (offline launch) must not refresh the
+  // throttle stamp — that would cache the all-error "no updates" verdict for
+  // the full throttle window after connectivity returns. checkedAt: 0 keeps
+  // the results available to the UI but lets the next check run immediately.
+  const allFailed = results.length > 0 && results.every(r => r.error)
+  const payload = { checkedAt: allFailed ? 0 : Date.now(), results }
   configStore.set('nexusUpdateCheck', payload)
   return payload
 }

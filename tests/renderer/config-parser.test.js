@@ -328,3 +328,40 @@ describe('inline comment + trailing comma (regression: #2 save corruption)', () 
     expect(kv.hadComma).toBe(true);
   });
 });
+
+// Regressions: serializing used to emit `"${value}"` verbatim — converting
+// single-quoted Lua strings to double quotes and leaving embedded quotes
+// unescaped, i.e. ANY save rewrote such lines into invalid Lua. And a `--[[`
+// inside a quoted value flipped the parser into block-comment mode for the
+// rest of the file.
+describe('quoted value round-trip', () => {
+  it('preserves the original quote character', () => {
+    const text = "greeting = 'say \"hi\" friend',";
+    expect(serializeConfig(parseConfigFile(text))).toBe(text);
+  });
+
+  it('escapes quotes the user typed into a double-quoted value', () => {
+    const entries = parseConfigFile('name = "AK47",');
+    entries[0].value = 'The "Best" Gun';
+    expect(serializeConfig(entries)).toBe('name = "The \\"Best\\" Gun",');
+  });
+
+  it('unescapes escaped quotes for the editor and reserializes identically', () => {
+    const text = 'msg = "a \\"quoted\\" word",';
+    const entries = parseConfigFile(text);
+    expect(entries[0].value).toBe('a "quoted" word');
+    expect(serializeConfig(entries)).toBe(text);
+  });
+
+  it('round-trips backslashes without doubling them', () => {
+    const text = 'path = "C:\\\\Games\\\\HumanitZ",';
+    const entries = parseConfigFile(text);
+    expect(entries[0].value).toBe('C:\\Games\\HumanitZ');
+    expect(serializeConfig(entries)).toBe(text);
+  });
+
+  it('does not enter block-comment mode for --[[ inside a quoted value', () => {
+    const entries = parseConfigFile('A = "see --[[docs"\nB = 2\nC = 3');
+    expect(entries.map(e => e.type)).toEqual(['keyval', 'keyval', 'keyval']);
+  });
+});

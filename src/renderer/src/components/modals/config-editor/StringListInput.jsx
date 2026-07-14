@@ -8,7 +8,7 @@ import { parseLuaArray, serializeLuaArray } from '../../../utils/config-parser';
 // Storage: same Lua array literal as MultiSelectInput (`{"a","b"}`),
 // serialized via parseLuaArray / serializeLuaArray.
 
-export default function StringListInput({ value, disabled, onChange }) {
+export default function StringListInput({ value, disabled, onChange, addLabel = 'Add' }) {
   const items = parseLuaArray(value) || [];
 
   const replace = (next) => onChange(serializeLuaArray(next));
@@ -49,7 +49,7 @@ export default function StringListInput({ value, disabled, onChange }) {
         className="w-full inline-flex items-center justify-center gap-1 py-1 text-[11px] font-bold rounded-md text-slate-500 dark:text-slate-400 bg-slate-100/70 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-700 border border-dashed border-slate-300 dark:border-slate-600 active:scale-95 transition-all"
       >
         <Plus className="w-3 h-3" />
-        新增
+        {addLabel}
       </button>
     </div>
   );

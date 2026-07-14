@@ -41,6 +41,7 @@ export default function SchemaRenderer({
   searchActive = false,
   matcher = null,
   noMatchLabel = 'No settings match your search.',
+  t = {},
 }) {
   // Lookup map: sectionName → keyName → entry index. Nested because INI/Lua
   // configs may repeat the same key name across sections (e.g. `enabled`
@@ -243,6 +244,7 @@ export default function SchemaRenderer({
                   onAddOptional={onAddOptional}
                   onRemoveOptional={onRemoveOptional}
                   modFilename={modFilename}
+                  t={t}
                   addToast={addToast}
                 />
               );

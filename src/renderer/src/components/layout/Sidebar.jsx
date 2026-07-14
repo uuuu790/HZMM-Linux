@@ -96,9 +96,11 @@ export default function Sidebar({
             <ArrowUpCircle className="w-4 h-4 lg:w-4 lg:h-4 shrink-0 animate-pulse" />
             <div className="hidden lg:flex flex-col items-start min-w-0 flex-1">
               <span className="text-[11px] font-black tracking-wider truncate">{t.newVersion}</span>
-              {updateInfo?.version && (
+              {/* The update-check result field is `latestVersion` (a tag like
+                  "v1.2.3") — reading `.version` rendered nothing, ever. */}
+              {updateInfo?.latestVersion && (
                 <span className="text-[10px] font-mono opacity-70 truncate">
-                  {updateState === 'ready' ? t.updateReady : `v${updateInfo.version}`}
+                  {updateState === 'ready' ? t.updateReady : `v${String(updateInfo.latestVersion).replace(/^v/i, '')}`}
                 </span>
               )}
             </div>

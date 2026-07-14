@@ -19,18 +19,29 @@ function NexusModCardImpl({ mod, t, onClick, onQuickInstall, installing, install
   // Brief "just installed" flash — mirror the installing prop going
   // true → false, then clear the green check after ~1.5s so the next
   // install session isn't still greeted with success state.
+  // Gated on `installed`: the installing prop also drops on FAILURE and on
+  // the multi-file-picker deferral, where a green "Installed" flash would be
+  // a false success signal. The installed badge refresh lands moments after
+  // a real install, which is what flips the flash on.
   const [justDone, setJustDone] = useState(false);
   const [wasInstalling, setWasInstalling] = useState(false);
   useEffect(() => {
     if (installing) {
       setWasInstalling(true);
-    } else if (wasInstalling) {
+      return;
+    }
+    if (!wasInstalling) return;
+    if (installed) {
       setWasInstalling(false);
       setJustDone(true);
       const tid = setTimeout(() => setJustDone(false), 1600);
       return () => clearTimeout(tid);
     }
-  }, [installing, wasInstalling]);
+    // No installed confirmation (failure / deferred to file picker) — drop
+    // the pending flash quietly after giving the badge refresh a moment.
+    const tid = setTimeout(() => setWasInstalling(false), 3000);
+    return () => clearTimeout(tid);
+  }, [installing, wasInstalling, installed]);
 
   const thumb = mod.picture_url;
   const author = mod.author || mod.uploaded_by || '—';

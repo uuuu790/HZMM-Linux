@@ -42,6 +42,7 @@ export default function SchemaRow({
   onRemoveOptional,
   modFilename,
   addToast,
+  t = {},
 }) {
   const handleToggleOptional = () => {
     if (isPresent) {
@@ -114,7 +115,12 @@ export default function SchemaRow({
         ) : type === 'color' ? (
           <ColorPicker value={currentValue} onChange={(v) => isPresent && onUpdateValue(entryIdx, v)} />
         ) : type === 'keybind' ? (
-          <KeybindInput value={currentValue} onChange={(v) => isPresent && onUpdateValue(entryIdx, v)} />
+          <KeybindInput
+            value={currentValue}
+            onChange={(v) => isPresent && onUpdateValue(entryIdx, v)}
+            pressAnyKeyLabel={t.configPressAnyKey}
+            clickToSetLabel={t.configClickToSet}
+          />
         ) : keyDef.widget === 'slider' && (type === 'int' || type === 'float') && keyDef.min !== undefined && keyDef.max !== undefined ? (
           <SliderInput
             value={currentValue}
@@ -131,12 +137,15 @@ export default function SchemaRow({
             options={options || []}
             disabled={!isPresent}
             onChange={(v) => isPresent && onUpdateValue(entryIdx, v)}
+            noneLabel={t.configNoneSelected}
+            selectedCountLabel={t.configSelectedCount}
           />
         ) : type === 'list' ? (
           <StringListInput
             value={currentValue}
             disabled={!isPresent}
             onChange={(v) => isPresent && onUpdateValue(entryIdx, v)}
+            addLabel={t.configAddItem}
           />
         ) : options ? (
           // 2 options or fewer fit nicely as side-by-side pills.

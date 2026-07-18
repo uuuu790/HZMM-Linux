@@ -130,6 +130,42 @@ function computeFileHash(filePath) {
   })
 }
 
+// True when this process runs from a mounted AppImage — the only Linux
+// packaging we can self-update (deb needs root/dpkg, so it stays manual).
+function isAppImageInstall() {
+  return typeof process.env.APPIMAGE === 'string' && process.env.APPIMAGE.length > 0
+}
+
+// Pure release-JSON → update-info mapping, split out so it can be unit-tested
+// without network or Electron. Integrity hash comes from the asset's GitHub-
+// computed `digest` field ("sha256:<hex>") first, with the release body's
+// `SHA256: <hex>` line as a fallback for older/hand-written releases.
+function parseReleaseInfo(release, currentVersion) {
+  const latestVersion = release.tag_name
+  const hasUpdate = compareVersions(currentVersion, latestVersion)
+
+  const asset = release.assets?.find(a => a.name.toLowerCase().endsWith('.appimage'))
+
+  let expectedHash = null
+  if (typeof asset?.digest === 'string') {
+    const digestMatch = asset.digest.match(/^sha256:([a-fA-F0-9]{64})$/)
+    if (digestMatch) expectedHash = digestMatch[1].toLowerCase()
+  }
+  if (!expectedHash && release.body) {
+    const hashMatch = release.body.match(/SHA256:\s*([a-fA-F0-9]{64})/)
+    if (hashMatch) expectedHash = hashMatch[1].toLowerCase()
+  }
+
+  return {
+    hasUpdate,
+    currentVersion,
+    latestVersion,
+    downloadUrl: asset?.browser_download_url || null,
+    expectedHash,
+    changelog: release.body || ''
+  }
+}
+
 async function checkForUpdate() {
   const currentVersion = app.getVersion()
   logger.info(`Checking for updates... current version: ${currentVersion}`)
@@ -139,29 +175,13 @@ async function checkForUpdate() {
     throw new Error('No release found')
   }
 
-  const latestVersion = release.tag_name
-  const hasUpdate = compareVersions(currentVersion, latestVersion)
+  const result = parseReleaseInfo(release, currentVersion)
+  // Tells the renderer whether "install" means in-place update (AppImage) or
+  // a manual download (deb / dev run), so it can label the button accordingly.
+  result.autoInstall = isAppImageInstall()
 
-  const asset = release.assets?.find(a => a.name.toLowerCase().endsWith('.exe'))
-
-  // Parse expected SHA256 from release body (format: `SHA256: <hex>`)
-  let expectedHash = null
-  if (release.body) {
-    const hashMatch = release.body.match(/SHA256:\s*([a-fA-F0-9]{64})/)
-    if (hashMatch) expectedHash = hashMatch[1].toLowerCase()
-  }
-
-  const result = {
-    hasUpdate,
-    currentVersion,
-    latestVersion,
-    downloadUrl: asset?.browser_download_url || null,
-    expectedHash,
-    changelog: release.body || ''
-  }
-
-  if (hasUpdate) {
-    logger.info(`Update available: ${latestVersion}`)
+  if (result.hasUpdate) {
+    logger.info(`Update available: ${result.latestVersion}`)
   } else {
     logger.info(`Already up to date: ${currentVersion}`)
   }
@@ -174,7 +194,7 @@ async function downloadUpdate(url, expectedHash, onProgress) {
     throw new Error('Update URL is not from an allowed source')
   }
 
-  const destPath = path.join(configStore.getConfigDir(), 'hzmm-update.exe')
+  const destPath = path.join(configStore.getConfigDir(), 'hzmm-update.AppImage')
 
   if (fs.existsSync(destPath)) fs.unlinkSync(destPath)
 
@@ -182,11 +202,11 @@ async function downloadUpdate(url, expectedHash, onProgress) {
   await downloadFile(url, destPath, onProgress, ALLOWED_DOWNLOAD_HOSTS)
 
   // SHA256 is mandatory — silently skipping it (the previous fallback) meant
-  // a tampered release body without the hash line bypassed integrity entirely.
-  // Every release notes body must include a `SHA256: <64hex>` line.
+  // a release without any hash bypassed integrity entirely. The hash comes
+  // from the GitHub asset digest (or a `SHA256: <64hex>` release-notes line).
   if (!expectedHash) {
     try { fs.unlinkSync(destPath) } catch { /* best-effort */ }
-    throw new Error('Update integrity check failed: release notes missing SHA256 hash')
+    throw new Error('Update integrity check failed: no SHA256 available for the release asset')
   }
   const actualHash = await computeFileHash(destPath)
   if (actualHash !== expectedHash.toLowerCase()) {
@@ -199,4 +219,45 @@ async function downloadUpdate(url, expectedHash, onProgress) {
   return destPath
 }
 
-export { checkForUpdate, downloadUpdate, compareVersions }
+// Pure file-swap half of the AppImage update, split from the Electron
+// relaunch so it can be unit-tested with mock-fs. Stages the replacement
+// NEXT TO the target (same filesystem) so the final rename is atomic — the
+// running app keeps its mounted inode, so replacing the file is safe.
+function replaceAppImageFile(stagedPath, targetPath) {
+  if (!stagedPath || !fs.existsSync(stagedPath)) {
+    throw new Error('No staged update file — download the update first')
+  }
+  const tmpPath = targetPath + '.hzmm-new'
+  try {
+    fs.copyFileSync(stagedPath, tmpPath)
+    fs.chmodSync(tmpPath, 0o755)
+    fs.renameSync(tmpPath, targetPath)
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath) } catch { /* best-effort */ }
+    throw new Error(`Failed to replace AppImage: ${err.message}`)
+  }
+  try { fs.unlinkSync(stagedPath) } catch { /* best-effort */ }
+}
+
+function installAppImageUpdate(stagedPath) {
+  const targetPath = process.env.APPIMAGE
+  if (!isAppImageInstall()) {
+    throw new Error('Not running from an AppImage — install the update manually')
+  }
+  replaceAppImageFile(stagedPath, targetPath)
+  logger.info(`AppImage updated in place: ${targetPath}`)
+  // Relaunch through the (now-updated) AppImage path, not process.execPath —
+  // execPath points inside the transient mount of the OLD version.
+  app.relaunch({ execPath: targetPath, args: [] })
+  app.quit()
+}
+
+export {
+  checkForUpdate,
+  downloadUpdate,
+  compareVersions,
+  parseReleaseInfo,
+  isAppImageInstall,
+  replaceAppImageFile,
+  installAppImageUpdate
+}

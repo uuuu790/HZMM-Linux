@@ -48,9 +48,11 @@ export function useUpdateHandlers() {
     });
     try {
       const result = await window.api.appUpdate.install();
-      // Linux: install opens the releases page and resolves { manual: true }
-      // instead of quitting the app (Windows exe-swap). Unblock the UI so the
-      // user can keep using the app while they download manually.
+      // Linux manual mode (deb/dev): install opens the releases page and
+      // resolves { manual: true } — unblock the UI so the user can keep using
+      // the app while they download manually. AppImage mode resolves
+      // { manual: false } and the app is about to relaunch itself: keep the
+      // "updating" state until the window goes away.
       if (result?.manual) {
         setIsUpdating(false);
         unsub();

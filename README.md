@@ -52,7 +52,7 @@ PAK mods (resource mods) work without any of this — they're loaded by Unreal E
 
 ### Backup & Update
 - **World save backup** — Backup world saves with mod snapshot, restore anytime
-- **Update check** — Detects new GitHub releases. Auto-install is currently Windows-only; on Linux, download the new AppImage/deb manually.
+- **Update check & in-app update** — Detects new GitHub releases. AppImage installs update in place (SHA256-verified) and relaunch; deb installs get pointed at the releases page for a manual download.
 
 ### User Experience
 - **Multi-language** — 繁體中文, English, 日本語, 한국어, Русский, Deutsch, Français

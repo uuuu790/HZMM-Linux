@@ -16,6 +16,7 @@ import { registerAppUpdateIpc } from './ipc/app-update'
 import { registerConflictsIpc } from './ipc/conflicts'
 import { registerNexusIpc } from './ipc/nexus'
 import { registerSteamWorkshopIpc } from './ipc/steam-workshop-ipc'
+import { registerNxmIpc, initNxmHandler, handleNxmUrl, findNxmUrlInArgv, ensureNxmRegistration } from './ipc/nxm'
 import { cleanupStaleDownloadTemp } from './ipc/mods-download'
 import { cleanupStaleRollback } from './ipc/mods-install'
 import logger from './services/logger.js'
@@ -105,6 +106,7 @@ function registerAllIpc(win) {
   registerConflictsIpc()
   registerNexusIpc(win)
   registerSteamWorkshopIpc()
+  registerNxmIpc()
 
   // Logger IPC
   ipcMain.handle('logger:get-path', () => logger.getPath())
@@ -296,6 +298,10 @@ function createWindow() {
   // Register all IPC handlers (guarded against duplicate registration)
   registerAllIpc(mainWindow)
 
+  // nxm toast events are window-scoped — re-bind on every createWindow so a
+  // window rebuilt from the tray keeps receiving them.
+  initNxmHandler(mainWindow)
+
   // Game-running polling is window-scoped — (re)start it on every createWindow
   // so a window rebuilt from the tray keeps receiving updates (registerAllIpc is
   // one-time-guarded and won't re-bind it).
@@ -356,7 +362,7 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       if (!mainWindow.isVisible()) mainWindow.show()
@@ -364,6 +370,10 @@ if (!gotSingleInstanceLock) {
     } else {
       createWindow()
     }
+    // A protocol click while we're running relaunches the app; the OS single-
+    // instance path delivers the nxm link in the second instance's argv.
+    const nxmUrl = findNxmUrlInArgv(commandLine)
+    if (nxmUrl) handleNxmUrl(nxmUrl)
   })
 
   app.whenReady().then(() => {
@@ -379,6 +389,10 @@ if (!gotSingleInstanceLock) {
       app.setLoginItemSettings({ openAtLogin: true })
     }
 
+    // Same treatment for the opt-in nxm:// registration (the AppImage may
+    // have moved or been replaced by the in-app updater since last run).
+    ensureNxmRegistration()
+
     // Sweep orphaned temp/rollback dirs left by a prior crash or hard-kill so
     // partial downloads and abandoned rollback backups don't accumulate.
     cleanupStaleDownloadTemp()
@@ -386,6 +400,13 @@ if (!gotSingleInstanceLock) {
 
     createTray()
     createWindow()
+
+    // Cold start FROM a protocol click: the link is in our own argv. Defer
+    // until the renderer loaded so the started/done toasts aren't dropped.
+    const coldNxmUrl = findNxmUrlInArgv(process.argv)
+    if (coldNxmUrl && mainWindow) {
+      mainWindow.webContents.once('did-finish-load', () => handleNxmUrl(coldNxmUrl))
+    }
   })
 }
 

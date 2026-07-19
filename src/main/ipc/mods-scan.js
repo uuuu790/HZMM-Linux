@@ -4,6 +4,7 @@ import configStore from '../services/config-store.js'
 import { getAllPaksPaths, getUe4ssModsPath } from '../services/steam-detector.js'
 import logger from '../services/logger.js'
 import { BUILTIN_MODS } from './constants.js'
+import { stripOrderPrefix } from './mods-order.js'
 
 // --- Mod scan cache ---
 let modCache = {
@@ -194,7 +195,9 @@ function scanMods() {
           mods.push({
             id: baseName,
             filename: file,
-            title: baseName.replace('.pak', '').replace(/_P$/, '').replace(/_/g, ' ').replace(/-/g, ' '),
+            // stripOrderPrefix: a load-order rename (z1_Foo_P.pak) must not
+            // leak "z1" into the display title — the filename stays the truth.
+            title: stripOrderPrefix(baseName).replace('.pak', '').replace(/_P$/, '').replace(/_/g, ' ').replace(/-/g, ' '),
             enabled: isPak,
             size: stat.size,
             modified: stat.mtime.toISOString(),

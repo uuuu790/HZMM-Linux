@@ -1,4 +1,4 @@
-import { CheckCircle, Settings, Play, LayoutDashboard, Layers, Save, Compass, ArrowUpCircle, Hammer } from 'lucide-react';
+import { CheckCircle, Settings, Play, LayoutDashboard, Layers, Save, Compass, ArrowUpCircle, Hammer, PackageX } from 'lucide-react';
 
 const YTSpinner = ({ className = '' }) => (
   <svg className={`yt-spinner ${className}`} viewBox="0 0 24 24" fill="none">
@@ -9,7 +9,7 @@ const YTSpinner = ({ className = '' }) => (
 
 export default function Sidebar({
   activeTab, setActiveTab, setActiveModuleId, appIcon, t,
-  isGameRunning, launchState, gameVersion, handleLaunch, appVersion,
+  isGameRunning, launchState, gameVersion, handleLaunch, handleLaunchVanilla, appVersion,
   updateState, updateInfo, modUpdateCount,
 }) {
   const hasUpdate = updateState === 'available' || updateState === 'downloading' || updateState === 'ready';
@@ -139,6 +139,19 @@ export default function Sidebar({
               </span>
             </div>
           </button>
+
+          {/* Vanilla launch — pause every mod, play clean, auto-restore on exit.
+              Only offered while idle; hidden once the game is running/launching. */}
+          {handleLaunchVanilla && !isGameRunning && launchState === 'idle' && (
+            <button
+              onClick={handleLaunchVanilla}
+              title={t.vanillaLaunchDesc || 'Launch without mods — they restore automatically after you quit'}
+              className="w-full mt-2 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl lg:rounded-full text-[10px] font-bold text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100/60 dark:hover:bg-slate-800/60 transition-all duration-200 active:scale-95"
+            >
+              <PackageX className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden lg:inline tracking-wide">{t.vanillaLaunch || 'Vanilla launch'}</span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -1,9 +1,121 @@
 import { ipcMain, shell } from 'electron'
 import fs from 'fs'
-import { detectGamePath, getPaksPath, getGameVersion, getGameVersionCached, HUMANITZ_APP_ID } from '../services/steam-detector.js'
+import path from 'path'
+import { detectGamePath, getPaksPath, getAllPaksPaths, getUe4ssModsPath, getGameVersion, getGameVersionCached, HUMANITZ_APP_ID } from '../services/steam-detector.js'
 import configStore from '../services/config-store.js'
 import { isGameRunning } from '../services/process-detector.js'
+import { assertSafeSegment } from '../services/path-safety.js'
+import { serializeModWrite } from './mods-install.js'
+import { scanMods, invalidateCache } from './mods-scan.js'
+import { syncUe4ssModRegistry } from './mods-registry.js'
 import logger from '../services/logger.js'
+
+// Shared launch core for game:launch and game:launch-vanilla. Always through
+// Steam's URL protocol so Steam orchestrates Proton — no direct-exe fallback
+// on Linux (a Windows .exe can't be bare-spawned without a Wine wrapper).
+async function launchGame() {
+  await shell.openExternal(`steam://rungameid/${HUMANITZ_APP_ID}`)
+  logger.info('Game launch dispatched via Steam')
+  return true
+}
+
+// --- Vanilla launch: disable everything, play clean, restore on exit ---
+
+const VANILLA_RESTORE_KEY = 'vanillaLaunchRestore'
+// While the game is NOT running, a pending restore is only applied after this
+// grace period — a slow Steam bootstrap must not get its mods handed back
+// mid-startup. The true→false exit transition restores immediately.
+const VANILLA_RESTORE_GRACE_MS = 2 * 60 * 1000
+
+// Disable every enabled mod directly on disk. No hybrid cascade needed — the
+// scan list contains both halves of a pair, each disabled on its own. Injected
+// paths keep both helpers unit-testable; per-mod failures are logged and
+// skipped so one locked file can't abort the vanilla launch.
+export function disableModsOnDisk({ paksPaths, ue4ssModsPath }, mods) {
+  const disabled = []
+  for (const mod of Array.isArray(mods) ? mods : []) {
+    if (!mod || !mod.enabled || !mod.filename) continue
+    try { assertSafeSegment('filename', mod.filename) } catch { continue }
+    try {
+      if (mod.type === 'PAK') {
+        for (const pp of paksPaths || []) {
+          const from = path.join(pp, mod.filename)
+          if (!fs.existsSync(from)) continue
+          fs.renameSync(from, `${from}.disabled`)
+          disabled.push({ type: 'PAK', filename: mod.filename })
+          break
+        }
+      } else if (mod.type === 'UE4SS' && ue4ssModsPath) {
+        const enabledFile = path.join(ue4ssModsPath, mod.filename, 'enabled.txt')
+        if (!fs.existsSync(enabledFile)) continue
+        fs.unlinkSync(enabledFile)
+        syncUe4ssModRegistry(ue4ssModsPath, mod.filename, false)
+        disabled.push({ type: 'UE4SS', filename: mod.filename })
+      }
+    } catch (err) {
+      logger.warn(`Vanilla launch: could not disable ${mod.filename}: ${err.message}`)
+    }
+  }
+  return disabled
+}
+
+export function restoreModsOnDisk({ paksPaths, ue4ssModsPath }, entries) {
+  let restored = 0
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!entry || !entry.filename) continue
+    try { assertSafeSegment('filename', entry.filename) } catch { continue }
+    try {
+      if (entry.type === 'PAK') {
+        for (const pp of paksPaths || []) {
+          const from = path.join(pp, `${entry.filename}.disabled`)
+          if (!fs.existsSync(from)) continue
+          fs.renameSync(from, path.join(pp, entry.filename))
+          restored++
+          break
+        }
+      } else if (entry.type === 'UE4SS' && ue4ssModsPath) {
+        const modDir = path.join(ue4ssModsPath, entry.filename)
+        if (!fs.existsSync(modDir)) continue
+        const enabledFile = path.join(modDir, 'enabled.txt')
+        if (!fs.existsSync(enabledFile)) fs.writeFileSync(enabledFile, '', 'utf-8')
+        syncUe4ssModRegistry(ue4ssModsPath, entry.filename, true)
+        restored++
+      }
+    } catch (err) {
+      logger.warn(`Vanilla restore: could not re-enable ${entry.filename}: ${err.message}`)
+    }
+  }
+  return restored
+}
+
+// Re-enable a pending vanilla-launch set. Called from the running poller:
+// immediately on the exit transition (force), and after the grace period
+// otherwise (failed launch / app restarted while the set was pending).
+let vanillaRestoreInFlight = false
+function maybeRestoreVanilla(mainWindow, { force = false } = {}) {
+  if (vanillaRestoreInFlight) return
+  const pending = configStore.get(VANILLA_RESTORE_KEY, null)
+  if (!pending || !Array.isArray(pending.entries) || pending.entries.length === 0) return
+  if (!force && Date.now() - (pending.at || 0) < VANILLA_RESTORE_GRACE_MS) return
+  const gamePath = configStore.get('gamePath')
+  if (!gamePath) return
+  vanillaRestoreInFlight = true
+  serializeModWrite(() => {
+    const modPaths = { paksPaths: getAllPaksPaths(gamePath), ue4ssModsPath: getUe4ssModsPath(gamePath) }
+    const restored = restoreModsOnDisk(modPaths, pending.entries)
+    configStore.set(VANILLA_RESTORE_KEY, null)
+    invalidateCache()
+    logger.info(`Vanilla launch: restored ${restored} mods`)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('game:vanilla-restored', { restored })
+      mainWindow.webContents.send('mods:updated')
+    }
+  }).catch((err) => {
+    logger.warn(`Vanilla restore failed: ${err.message}`)
+  }).finally(() => {
+    vanillaRestoreInFlight = false
+  })
+}
 
 function registerGameIpc() {
   ipcMain.handle('game:detect-path', () => {
@@ -82,13 +194,30 @@ function registerGameIpc() {
     // bare-spawned on Linux without a Wine wrapper, and a non-Steam copy has no
     // Proton prefix to run through. Tradeoff: requires Steam installed + signed in.
     try {
-      await shell.openExternal(`steam://rungameid/${HUMANITZ_APP_ID}`)
-      logger.info('Game launch dispatched via Steam')
-      return true
+      return await launchGame()
     } catch (err) {
       logger.error('Game launch failed: ' + err.message)
       throw err
     }
+  })
+
+  // Vanilla launch: disable every enabled mod, persist the restore list, then
+  // launch. The restore fires from the game-running poller (exit transition or
+  // grace-expired crash recovery) — see maybeRestoreVanilla above.
+  ipcMain.handle('game:launch-vanilla', async () => {
+    const gamePath = configStore.get('gamePath')
+    if (!gamePath) throw new Error('Game path not set')
+    const modPaths = { paksPaths: getAllPaksPaths(gamePath), ue4ssModsPath: getUe4ssModsPath(gamePath) }
+    const disabled = await serializeModWrite(() => {
+      const entries = disableModsOnDisk(modPaths, scanMods())
+      if (entries.length > 0) {
+        configStore.set(VANILLA_RESTORE_KEY, { entries, at: Date.now() })
+      }
+      invalidateCache()
+      return entries
+    })
+    await launchGame()
+    return { ok: true, disabledCount: disabled.length }
   })
 
   ipcMain.handle('game:is-running', () => isGameRunning())
@@ -115,6 +244,13 @@ function startGameRunningPolling(mainWindow) {
     if (mainWindow.isDestroyed()) return
     let running
     try { running = await isGameRunning() } catch { return }
+    // Vanilla-launch restore: immediately on the true→false exit transition,
+    // otherwise (steady idle / app start with a stale pending set) only after
+    // the grace period. Checked BEFORE the no-change early return so the
+    // steady-false state keeps retrying until the grace elapses.
+    if (running === false) {
+      maybeRestoreVanilla(mainWindow, { force: lastRunning === true })
+    }
     if (running === lastRunning) return
     lastRunning = running
     mainWindow.webContents.send('game:running', running)

@@ -32,27 +32,27 @@ describe('resolveModConfigPath — attack vectors (must all throw)', () => {
   it('blocks modFilename ../../../ escape', () => {
     expect(() =>
       resolveModConfigPath(MODS_ROOT, '../../../../../../Windows/System32', 'config.ini')
-    ).toThrow(/traversal|invalid/i)
+    ).toThrow(/traversal|invalid|separator|reserved/i)
   })
 
   it('blocks modFilename that escapes the mods root via path traversal', () => {
     expect(() =>
       resolveModConfigPath(MODS_ROOT, IS_WINDOWS ? '..\\..\\..\\Windows\\System32' : '../../../etc', 'hosts')
-    ).toThrow(/traversal|invalid/i)
+    ).toThrow(/traversal|invalid|separator|reserved/i)
   })
 
   // Attack 2: relativePath contains .. to escape the mod subfolder.
   it('blocks relativePath .. escape', () => {
     expect(() =>
       resolveModConfigPath(MODS_ROOT, 'MyMod', '../../../../etc/passwd')
-    ).toThrow(/traversal|invalid/i)
+    ).toThrow(/traversal|invalid|separator|reserved/i)
   })
 
   // Attack 3: both segments collaborate to escape.
   it('blocks combined modFilename + relativePath escape', () => {
     expect(() =>
       resolveModConfigPath(MODS_ROOT, '..', '..\\..\\Windows\\win.ini')
-    ).toThrow(/traversal|invalid/i)
+    ).toThrow(/traversal|invalid|separator|reserved/i)
   })
 
   // Attack 4: empty / null / non-string inputs.

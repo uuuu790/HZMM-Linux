@@ -33,6 +33,30 @@ export function recordInstall(modId, fileId, localMods, version = null) {
   configStore.set('nexusInstalledMods', safe)
 }
 
+// Manually associate a local mod with a Nexus mod page ("claim" a hand-
+// installed mod so the update checker covers it). Pure: returns the new
+// receipts array. Merging into an existing receipt only ADDS the localMod;
+// fileId/version fill in only when the receipt had none — a real install's
+// info always outranks a manual link.
+export function mergeLinkIntoReceipts(receipts, modId, localMod, { fileId = null, version = null, now = 0 } = {}) {
+  const list = Array.isArray(receipts) ? receipts.map(r => (r ? { ...r } : r)) : []
+  const existing = list.find(r => r && r.modId === modId)
+  if (existing) {
+    const lms = Array.isArray(existing.localMods) ? [...existing.localMods] : []
+    if (!lms.some(lm => lm && lm.modType === localMod.modType && lm.name === localMod.name)) {
+      lms.push(localMod)
+    }
+    existing.localMods = lms
+    if (existing.fileId == null && fileId != null) {
+      existing.fileId = fileId
+      if (!existing.version && version) existing.version = version
+    }
+    return list
+  }
+  list.push({ modId, fileId, installedAt: now, version, localMods: [localMod] })
+  return list
+}
+
 // Flatten installMods / downloadAndInstallFromUrl result into the flat
 // {name, modType}[] shape recordInstall wants. The install result nests
 // `mods` arrays inside one top-level entry per source archive.

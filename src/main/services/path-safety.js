@@ -64,8 +64,13 @@ export function isPathWithin(parent, candidate) {
   if (typeof parent !== 'string' || typeof candidate !== 'string') return false
   if (!parent || !candidate) return false
 
-  const resolvedParent = path.resolve(parent)
-  const resolvedCandidate = path.resolve(candidate)
+  // Archives always come from Windows tooling, so `\` must be treated as a path
+  // separator on every platform. On POSIX path.resolve treats `\` as an ordinary
+  // filename character, which would let a Windows-style ..\..\ candidate sneak
+  // past this check; normalize to `/` first so path.resolve sees the real
+  // structure (path.resolve already accepts `/` on Windows).
+  const resolvedParent = path.resolve(parent.replace(/\\/g, '/'))
+  const resolvedCandidate = path.resolve(candidate.replace(/\\/g, '/'))
 
   if (resolvedCandidate === resolvedParent) return true
 
@@ -90,7 +95,13 @@ export function resolveWithin(parent, ...segments) {
     }
   }
 
-  const joined = path.join(parent, ...segments)
+  // Normalize `\`→`/` in each segment before joining: Windows tooling produces
+  // backslash separators, but on POSIX path.join treats `\` as a filename char,
+  // so a `..\..\` segment would join as a harmless-looking single name and slip
+  // past the traversal check below. `/` is a valid separator for path.join on
+  // every platform, and path.join still neutralizes later absolute segments.
+  const normalizedSegments = segments.map(seg => seg.replace(/\\/g, '/'))
+  const joined = path.join(parent, ...normalizedSegments)
   const resolved = path.resolve(joined)
 
   if (!isPathWithin(parent, resolved)) {

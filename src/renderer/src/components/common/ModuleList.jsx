@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Trash2, CheckCircle, Power, ChevronDown, CheckSquare, Square, AlertTriangle, Pencil, ArrowUpCircle } from 'lucide-react';
+import { Trash2, CheckCircle, Power, ChevronDown, CheckSquare, Square, AlertTriangle, Pencil, ArrowUpCircle, Link2, History } from 'lucide-react';
 import { getModIcon, cleanModName } from '../../constants/modIcons';
 import ModDetailModal from '../modals/ModDetailModal';
 import GlassCard from './GlassCard';
@@ -71,7 +71,7 @@ function InlineModName({ mod, onRename }) {
   );
 }
 
-const ModuleList = ({ modules, type, subtype, title, icon: Icon, colorClass, activeModuleId, onModuleClick, onToggle, onUninstallLocal, onOpenConfig, onRenameMod, t, lang, newlyInstalledMods, selectedMods, onToggleSelect, onRangeSelect, conflictModSet, modUpdateMap, updatingModId, onUpdateMod, nexusApiKey }) => {
+const ModuleList = ({ modules, type, subtype, title, icon: Icon, colorClass, activeModuleId, onModuleClick, onToggle, onUninstallLocal, onOpenConfig, onRenameMod, t, lang, newlyInstalledMods, selectedMods, onToggleSelect, onRangeSelect, conflictModSet, modUpdateMap, updatingModId, onUpdateMod, nexusApiKey, nexusLinkedSet, onLinkMod, rollbackMap, onRollbackMod }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const lastClickedRef = useRef(null);
 
@@ -200,6 +200,34 @@ const ModuleList = ({ modules, type, subtype, title, icon: Icon, colorClass, act
                           <span className="hidden sm:inline">{updateBusy ? (t.updating || 'Updating') : (nexusApiKey ? (t.updateMod || 'Update') : (t.viewOnNexus || 'Nexus'))}</span>
                         </button>
                       )}
+                      {(() => {
+                        // linked/rollback lookups key on the enabled-form name
+                        const bareName = mod.filename.replace(/\.disabled$/i, '');
+                        const rollbackInfo = rollbackMap?.get(bareName);
+                        const unlinked = nexusLinkedSet && !nexusLinkedSet.has(bareName);
+                        return (
+                          <>
+                            {rollbackInfo && onRollbackMod && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onRollbackMod(mod); }}
+                                className="p-1.5 rounded-full text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/20 transition-all duration-300 hover:scale-110 active:scale-95"
+                                title={`${t.rollback || 'Roll back'}${rollbackInfo.version ? ` → v${rollbackInfo.version}` : ''}`}
+                              >
+                                <History className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {unlinked && onLinkMod && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onLinkMod(mod); }}
+                                className="p-1.5 rounded-full text-slate-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-500/20 transition-all duration-300 hover:scale-110 active:scale-95"
+                                title={t.linkNexus || 'Link to Nexus'}
+                              >
+                                <Link2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                       <button
                         onClick={(e) => { e.stopPropagation(); onUninstallLocal(mod.filename); }}
                         className="p-1.5 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/20 transition-all duration-300 hover:scale-110 active:scale-95"

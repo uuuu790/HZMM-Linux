@@ -27,7 +27,12 @@ export function resolveModConfigPath(ue4ssModsPath, modFilename, relativePath) {
   if (typeof relativePath !== 'string' || !relativePath) {
     throw new Error('Invalid relative path')
   }
-  return resolveWithin(ue4ssModsPath, modFilename, relativePath)
+  // Re-root under the SPECIFIC mod folder (not the shared mods root) so a
+  // relativePath like "../OtherMod/Scripts/main.lua" can't cross into a sibling
+  // mod and overwrite its runtime script. modFilename must be a flat segment
+  // (the IPC handlers assert this too; re-check for the mods-profiles.js reuse).
+  assertSafeSegment('modFilename', modFilename)
+  return resolveWithin(path.join(ue4ssModsPath, modFilename), relativePath)
 }
 
 // Shared: recursively scan a directory for config files.

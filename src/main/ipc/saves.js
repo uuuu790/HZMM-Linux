@@ -30,16 +30,36 @@ function getSavePath() {
   return null
 }
 
+// Non-world save files that must never be treated as world names.
+const GLOBAL_SAVE_FILES = new Set(['CC_Presets.sav', 'LocalGlobal.sav', 'SaveCache.sav', 'DedSave_ResGlobal.sav', 'SavedSettings.sav', 'steam_autocloud.vdf', 'Save_ClanData.sav'])
+
+// Keep only the newest `keep` auto-backups (dir names sort chronologically —
+// ISO timestamps). Manual backups are untouched. Exported for unit tests.
+export function pruneAutoBackups(backupDir, keep = 5) {
+  let dirs = []
+  try { dirs = fs.readdirSync(backupDir).filter(d => d.startsWith('save_backup_auto_')) } catch { return 0 }
+  dirs.sort((a, b) => b.localeCompare(a))
+  let pruned = 0
+  for (const d of dirs.slice(keep)) {
+    try {
+      fs.rmSync(path.join(backupDir, d), { recursive: true, force: true })
+      pruned++
+    } catch (err) {
+      logger.warn(`Auto-backup prune failed for ${d}: ${err.message}`)
+    }
+  }
+  return pruned
+}
+
 function registerSavesIpc(_mainWindow) {
   ipcMain.handle('saves:list-worlds', () => {
     const savePath = getSavePath()
     if (!savePath) return []
     let files
     try { files = fs.readdirSync(savePath) } catch { return [] }
-    const globalFiles = new Set(['CC_Presets.sav', 'LocalGlobal.sav', 'SaveCache.sav', 'DedSave_ResGlobal.sav', 'SavedSettings.sav', 'steam_autocloud.vdf', 'Save_ClanData.sav'])
     const worldNames = new Set()
     for (const file of files) {
-      if (globalFiles.has(file) || file.startsWith('Minimap') || !file.endsWith('.sav')) continue
+      if (GLOBAL_SAVE_FILES.has(file) || file.startsWith('Minimap') || !file.endsWith('.sav')) continue
       const match = file.match(/^Save_(.+)\.sav$/)
       if (match) worldNames.add(match[1])
     }
@@ -96,6 +116,54 @@ function registerSavesIpc(_mainWindow) {
     fs.writeFileSync(path.join(backupPath, 'backup.json'), JSON.stringify(meta, null, 2))
     logger.info(`Save backup created: ${backupPath} (${worlds.length} worlds, ${totalSize} bytes)`)
     return { path: backupPath, timestamp, worlds, totalSize }
+  })
+
+  // Silent safety net fired before a profile apply. Backs up every world with
+  // an `auto_` dir marker and keeps only the newest 5 so they can't pile up.
+  // Best-effort by contract: callers fire-and-forget; a miss must never block
+  // the apply, so "nothing to back up" returns a skipped marker, not a throw.
+  ipcMain.handle('saves:auto-backup', () => {
+    const savePath = getSavePath()
+    if (!savePath) return { skipped: true, reason: 'no-save-path' }
+    let files = []
+    try { files = fs.readdirSync(savePath) } catch { return { skipped: true, reason: 'unreadable' } }
+    const worldNames = []
+    for (const file of files) {
+      if (GLOBAL_SAVE_FILES.has(file) || file.startsWith('Minimap')) continue
+      const match = file.match(/^Save_(.+)\.sav$/)
+      if (!match) continue
+      try { assertSafeSegment('worldName', match[1]) } catch { continue }
+      worldNames.push(match[1])
+    }
+    if (worldNames.length === 0) return { skipped: true, reason: 'no-worlds' }
+
+    const backupDir = path.join(configStore.getConfigDir(), 'backups')
+    fs.mkdirSync(backupDir, { recursive: true })
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const backupPath = path.join(backupDir, `save_backup_auto_${timestamp}`)
+    const worldsDir = path.join(backupPath, 'worlds')
+    fs.mkdirSync(worldsDir, { recursive: true })
+    const worlds = []
+    let totalSize = 0
+    for (const name of worldNames) {
+      const worldDir = path.join(worldsDir, name)
+      fs.mkdirSync(worldDir, { recursive: true })
+      const copied = []
+      for (const file of [`Save_${name}.sav`, `${name}_CharPreview.sav`, `${name}_Foliage.sav`]) {
+        const src = path.join(savePath, file)
+        if (!fs.existsSync(src)) continue
+        const stat = fs.statSync(src)
+        fs.copyFileSync(src, path.join(worldDir, file))
+        copied.push({ filename: file, size: stat.size })
+        totalSize += stat.size
+      }
+      worlds.push({ name, files: copied })
+    }
+    const meta = { type: 'save_backup', version: 1, auto: true, timestamp, date: new Date().toISOString(), savePath, worlds, totalSize }
+    fs.writeFileSync(path.join(backupPath, 'backup.json'), JSON.stringify(meta, null, 2))
+    pruneAutoBackups(backupDir, 5)
+    logger.info(`Auto save backup created: ${backupPath} (${worlds.length} worlds, ${totalSize} bytes)`)
+    return { path: backupPath, timestamp, worlds: worlds.length, totalSize }
   })
 
   ipcMain.handle('saves:list-backups', () => {

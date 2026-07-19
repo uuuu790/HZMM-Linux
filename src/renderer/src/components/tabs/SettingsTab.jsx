@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import GlassCard from '../common/GlassCard';
 import { THEME_PRESETS } from '../../constants/themes';
-import { Settings, Sun, Moon, Sliders, Folder, RefreshCw, AlertTriangle, FileText, Info, DownloadCloud, CheckCircle, Save, RotateCcw, Trash2, KeyRound, Map, Terminal, ClipboardCopy } from 'lucide-react';
+import { Settings, Sun, Moon, Sliders, Folder, RefreshCw, AlertTriangle, FileText, Info, DownloadCloud, CheckCircle, Save, RotateCcw, Trash2, KeyRound, Map, Terminal, ClipboardCopy, Link2 } from 'lucide-react';
 import { formatBytes } from '../common/utils';
 
 const PROTON_LAUNCH_OPTION = 'WINEDLLOVERRIDES="dwmapi=n,b" %command%';
@@ -35,6 +35,8 @@ function SettingsTab({
   handleDeleteBackup,
   nexusApiKey,
   handleSetNexusApiKey,
+  nxmEnabled,
+  handleSetNxmEnabled,
   minimizeToTray,
   handleSetMinimizeToTray,
   autoStart,
@@ -344,6 +346,33 @@ function SettingsTab({
                 {t.nexusGetKey || 'Get Key'}
               </button>
             </div>
+          </GlassCard>
+        </div>
+
+        {/* nxm:// link handler (opt-in — takes the protocol over from Vortex/MO2) */}
+        <div className="animate-slide-up" style={{ animationFillMode: 'both', animationDelay: '250ms', animationDuration: '600ms' }}>
+          <GlassCard className="group flex flex-row items-center px-4 py-2 md:px-5 md:py-2.5 gap-2 md:gap-4 relative">
+            <div className="p-2.5 rounded-full border shrink-0 transition-all duration-500 shadow-sm group-hover:scale-110 group-hover:-rotate-6"
+              style={{ backgroundColor: 'rgba(var(--accent-rgb), 0.15)', borderColor: 'rgba(var(--accent-rgb), 0.3)', color: 'var(--accent-500)' }}>
+              <Link2 className="w-5 h-5" />
+            </div>
+            <div className="flex flex-col flex-1 min-w-0 transition-opacity duration-300">
+              <h4 className="text-sm md:text-base font-bold text-slate-800 dark:text-slate-100 truncate leading-tight transition-colors duration-700">{t.nxmHandler || 'Handle nxm:// links'}</h4>
+              <p className="text-[10px] md:text-[11px] text-slate-500 dark:text-slate-400 truncate font-medium transition-colors duration-700">{t.nxmHandlerDesc || 'One-click install from the Nexus Mod Manager Download button'}</p>
+            </div>
+            <button
+              onClick={() => handleSetNxmEnabled(!nxmEnabled)}
+              className="relative flex items-center w-12 h-6 bg-slate-200/80 dark:bg-slate-950/60 rounded-full p-0.5 shadow-inner transition-colors duration-500 hover:scale-105 active:scale-95 shrink-0"
+            >
+              <div
+                className={`absolute top-0.5 bottom-0.5 w-5 rounded-full shadow-md transition-all duration-500 ${nxmEnabled ? '' : 'bg-slate-400 dark:bg-slate-600'}`}
+                style={{
+                  transform: nxmEnabled ? 'translateX(24px)' : 'translateX(0)',
+                  transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  ...(nxmEnabled ? { backgroundColor: 'var(--accent-500)' } : {})
+                }}
+              />
+            </button>
           </GlassCard>
         </div>
 

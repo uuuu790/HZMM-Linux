@@ -10,6 +10,7 @@ import { scanMods, isCacheValid, updateCacheState, invalidateCache, getCachedMod
 import { syncUe4ssModRegistry, removeFromUe4ssModRegistry } from './mods-registry.js'
 import { installMods, serializeModWrite } from './mods-install.js'
 import { ALLOWED_MOD_HOSTS, isAllowedModUrl } from './mods-download.js'
+import { pickWinningName, renamePakEverywhere, buildOrderTargets, executeOrderRenames } from './mods-order.js'
 
 // Re-export for external consumers (tests, etc.)
 export { ALLOWED_MOD_HOSTS, isAllowedModUrl }
@@ -66,6 +67,70 @@ function registerModsIpc(mainWindow) {
     }
     configStore.set('modCustomNames', names)
   })
+
+  // --- Load order: make a pak win its conflict group ---
+  // UE mounts ~mods paks alphabetically, later wins. Rename the chosen pak
+  // with an escalating z<N>_ prefix so it sorts after every competitor, and
+  // migrate every filename-keyed store (profiles / receipts / custom names /
+  // hybrid links) in the same mutex task.
+  ipcMain.handle('mods:make-pak-win', (_, filename, competitors) => serializeModWrite(() => {
+    assertSafeSegment('filename', filename)
+    if (!Array.isArray(competitors) || competitors.length === 0) throw new Error('No competitors provided')
+    for (const c of competitors) assertSafeSegment('competitor', c)
+    const gamePath = configStore.get('gamePath')
+    if (!gamePath) throw new Error('Game path not set')
+
+    const newFilename = pickWinningName(filename, competitors)
+    if (newFilename === filename) return { filename, renamed: false }
+
+    renamePakEverywhere(
+      { paksPaths: getAllPaksPaths(gamePath), ue4ssModsPath: getUe4ssModsPath(gamePath) },
+      filename,
+      newFilename
+    )
+    invalidateCache()
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mods:updated')
+    return { filename: newFilename, renamed: true }
+  }))
+
+  // --- Load order: apply a full drag-and-drop sequence ---
+  // Renumbers every pak to NNN_<core> so the on-disk alphabetical order equals
+  // the dragged sequence (no-op when it already does). executeOrderRenames
+  // handles swap cycles; every rename migrates the filename-keyed stores.
+  ipcMain.handle('mods:apply-pak-order', (_, orderedFilenames) => serializeModWrite(() => {
+    if (!Array.isArray(orderedFilenames) || orderedFilenames.length === 0) throw new Error('No order provided')
+    const seen = new Set()
+    const normalized = orderedFilenames.map(fn => {
+      assertSafeSegment('filename', fn)
+      // Load order is defined by the ENABLED-form name (what the engine will
+      // mount once the mod is re-enabled); renamePakEverywhere resolves the
+      // on-disk .disabled twin itself.
+      const enabledForm = fn.replace(/\.disabled$/i, '')
+      const key = enabledForm.toLowerCase()
+      if (seen.has(key)) throw new Error(`Duplicate filename in order: ${fn}`)
+      seen.add(key)
+      return enabledForm
+    })
+    const gamePath = configStore.get('gamePath')
+    if (!gamePath) throw new Error('Game path not set')
+
+    const targets = buildOrderTargets(normalized)
+    if (targets.length === 0) return { renamed: 0, skipped: 0, changed: false }
+
+    const paksPaths = getAllPaksPaths(gamePath)
+    const modPaths = { paksPaths, ue4ssModsPath: getUe4ssModsPath(gamePath) }
+    const exists = (name) => paksPaths.some(pp =>
+      fs.existsSync(path.join(pp, name)) || fs.existsSync(path.join(pp, `${name}.disabled`)))
+    const summary = executeOrderRenames(targets, {
+      exists,
+      rename: (from, to) => renamePakEverywhere(modPaths, from, to),
+    })
+
+    invalidateCache()
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mods:updated')
+    logger.info(`Load order applied: ${summary.renamed} renamed, ${summary.skipped} skipped`)
+    return { ...summary, changed: summary.renamed > 0 }
+  }))
 
   // --- Toggle ---
   // Serialized with install/remove so concurrent operations on the same

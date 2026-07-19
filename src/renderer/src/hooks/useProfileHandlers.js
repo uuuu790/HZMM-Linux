@@ -46,6 +46,10 @@ export function useProfileHandlers({ addToast, showConfirm, closeConfirm, t, mod
   }, [newProfileName, modules, profiles, t, addToast, persistSetting]);
 
   const applyProfileNow = useCallback(async (profile) => {
+    // Safety net: snapshot every world save before touching mod state (main
+    // process keeps only the newest 5 auto-backups). Silent best-effort — a
+    // failed backup must never block the apply.
+    try { await window.api.saves?.autoBackup?.(); } catch { /* best-effort */ }
     const profileSet = normalizeProfileFilenames(profile.enabledModFilenames);
     // Re-scan instead of using the render-time `modules` snapshot: callers
     // like "download missing & apply" install mods right before applying, and

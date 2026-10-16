@@ -5,10 +5,14 @@ import {
   guessValueType,
   appendKeyval,
   removeKeyval,
+  removeKeyvalAt,
   valueNeedsQuote,
   parseLuaArray,
   serializeLuaArray,
-} from '../../src/renderer/src/utils/config-parser.js';
+  buildSectionKeyIndex,
+  resolveEntryIdx,
+  resolveSectionName,
+} from '../../src/renderer/src/utils/config-parser';
 
 // Round-trip is the parser's primary contract: a file goes in, the editor
 // mutates only `entries[].value`, then serialize must reproduce the original
@@ -256,25 +260,28 @@ describe('appendKeyval', () => {
   });
 });
 
-describe('removeKeyval', () => {
-  it('removes the matching keyval entry', () => {
+describe('removeKeyvalAt', () => {
+  it('removes the keyval at the given index', () => {
     const entries = parseConfigFile('A = 1\nB = 2\nC = 3');
-    const out = removeKeyval(entries, 'B');
+    const out = removeKeyvalAt(entries, 1);
     const keyvals = out.filter(e => e.type === 'keyval').map(e => e.key);
     expect(keyvals).toEqual(['A', 'C']);
   });
 
-  it('returns the list unchanged if the key is not present', () => {
-    const entries = parseConfigFile('A = 1');
-    const out = removeKeyval(entries, 'Nope');
-    expect(out).toEqual(entries);
+  it('removes every line of a repeated key in the same table (Lua must read nil)', () => {
+    // Lua's last-wins: removing only one `A = …` would bring the other back.
+    const entries = parseConfigFile('A = 1\nA = 2\nB = 3');
+    const out = removeKeyvalAt(entries, 0);
+    const keyvals = out.filter(e => e.type === 'keyval');
+    expect(keyvals.map(e => e.key)).toEqual(['B']);
   });
 
-  it('removes all entries with the same key (defensive against duplicates)', () => {
-    const entries = parseConfigFile('A = 1\nA = 2\nB = 3');
-    const out = removeKeyval(entries, 'A');
-    const keyvals = out.filter(e => e.type === 'keyval').map(e => e.key);
-    expect(keyvals).toEqual(['B']);
+  it('returns the list unchanged for an out-of-range or non-keyval index', () => {
+    const entries = parseConfigFile('-- header\nA = 1');
+    expect(removeKeyvalAt(entries, 99)).toEqual(entries);
+    expect(removeKeyvalAt(entries, -1)).toEqual(entries);
+    expect(removeKeyvalAt(entries, undefined)).toEqual(entries);
+    expect(removeKeyvalAt(entries, 0)).toEqual(entries); // index 0 is the comment
   });
 });
 
@@ -329,39 +336,231 @@ describe('inline comment + trailing comma (regression: #2 save corruption)', () 
   });
 });
 
-// Regressions: serializing used to emit `"${value}"` verbatim — converting
-// single-quoted Lua strings to double quotes and leaving embedded quotes
-// unescaped, i.e. ANY save rewrote such lines into invalid Lua. And a `--[[`
-// inside a quoted value flipped the parser into block-comment mode for the
-// rest of the file.
-describe('quoted value round-trip', () => {
-  it('preserves the original quote character', () => {
-    const text = "greeting = 'say \"hi\" friend',";
+// Regression: Nexus report 2026-07-20 — "config button opens a window and
+// nothing shows up". A Lua config whose keys sit under DECORATIVE comment
+// banners (--[[ ====[ NAME ]==== ]]) was treated as "structured", which
+// disabled the flat-lookup fallback; since banner names rarely equal the
+// schema's section ids (banner "UPGRADE STORAGE EXTRA CAPACITY" vs schema id
+// "UpgradeStorage"), every schema key resolved to undefined and the editor
+// rendered two empty section headers. Real INI [Section] files must KEEP the
+// strict scoping (audit 2026-05-14: cross-scope key leak).
+describe('buildSectionKeyIndex + resolveEntryIdx — decorative vs real sections', () => {
+  const luaWithBanners = [
+    '--[[ ============================================================',
+    '  VehicleStorageMod config',
+    '  ============================================================ ]]',
+    'local Config = {',
+    '',
+    '--[[ ====[ UPGRADE STORAGE EXTRA CAPACITY ]==== ]]',
+    'Lv1Extra = 5,',
+    'Lv2Extra = 10,',
+    '',
+    '-- ====[ VEHICLE STORAGE ]====',
+    'Mode = "All",',
+    'Slots = 80,',
+    '}',
+    'return Config',
+  ].join('\n');
+
+  it('marks comment-banner sections as decorative, INI sections as real', () => {
+    const entries = parseConfigFile(luaWithBanners);
+    const sections = entries.filter(e => e.type === 'section');
+    expect(sections.map(s => s.name)).toEqual(['UPGRADE STORAGE EXTRA CAPACITY', 'VEHICLE STORAGE']);
+    expect(sections.every(s => s.decorative === true)).toBe(true);
+
+    const iniSections = parseConfigFile('[Combat]\nenabled=true').filter(e => e.type === 'section');
+    expect(iniSections[0].decorative).toBeUndefined();
+  });
+
+  it('resolves schema keys across decorative banners whose names differ from schema ids', () => {
+    const entries = parseConfigFile(luaWithBanners);
+    const index = buildSectionKeyIndex(entries);
+    expect(index.hasStructuredSections).toBe(false);
+
+    // Schema section ids that do NOT match the banner text — the reported case.
+    for (const [sectionId, keyName] of [
+      ['UpgradeStorage', 'Lv1Extra'],
+      ['UpgradeStorage', 'Lv2Extra'],
+      ['VehicleStorage', 'Mode'],
+      ['VehicleStorage', 'Slots'],
+    ]) {
+      const idx = resolveEntryIdx(index, sectionId, keyName);
+      expect(idx, `${sectionId}.${keyName}`).not.toBeUndefined();
+      expect(entries[idx].key).toBe(keyName);
+    }
+  });
+
+  it('still resolves via exact match when banner names equal schema ids', () => {
+    const entries = parseConfigFile('-- [Combat]\nDamage = 10,\n-- [Movement]\nSpeed = 2,');
+    const index = buildSectionKeyIndex(entries);
+    const idx = resolveEntryIdx(index, 'Combat', 'Damage');
+    expect(entries[idx].value).toBe('10');
+  });
+
+  it('keeps strict scoping for real INI sections (no cross-scope leak)', () => {
+    const ini = ['[DamageNumbers]', 'enabled = true', '[IncomingDamage]', 'enabled = false'].join('\n');
+    const entries = parseConfigFile(ini);
+    const index = buildSectionKeyIndex(entries);
+    expect(index.hasStructuredSections).toBe(true);
+
+    expect(entries[resolveEntryIdx(index, 'DamageNumbers', 'enabled')].value).toBe('true');
+    expect(entries[resolveEntryIdx(index, 'IncomingDamage', 'enabled')].value).toBe('false');
+    // A schema section id with no matching real section must NOT leak a key
+    // from another scope.
+    expect(resolveEntryIdx(index, 'HitMarker', 'enabled')).toBeUndefined();
+  });
+
+  it('sectionless config still resolves from the flat bucket', () => {
+    const entries = parseConfigFile('Radius = 25,\nShowRing = true,');
+    const index = buildSectionKeyIndex(entries);
+    expect(index.hasStructuredSections).toBe(false);
+    expect(entries[resolveEntryIdx(index, 'GeneratorRadius', 'Radius')].value).toBe('25');
+  });
+});
+
+// Regression: the flat-lookup fallback above made READS work for decorative
+// banners, but the WRITE path still re-derived its target by matching the
+// schema's section id against the file's section names. Toggling an optional
+// key off matched nothing and silently did nothing; toggling one on dumped the
+// new line at the file bottom instead of inside its banner block. Reads and
+// writes must agree: resolution happens once (resolveEntryIdx /
+// resolveSectionName) and both sides consume its answer.
+describe('optional-key writes agree with resolveEntryIdx (decorative banners)', () => {
+  const lua = [
+    'local Config = {',
+    '-- ====[ UPGRADE STORAGE EXTRA CAPACITY ]====',
+    'Lv1Extra = 5,',
+    '-- ====[ VEHICLE STORAGE ]====',
+    'Slots = 80,',
+    '}',
+  ].join('\n');
+
+  it('removes the key the schema row actually resolved to', () => {
+    const entries = parseConfigFile(lua);
+    const index = buildSectionKeyIndex(entries);
+    // Schema section id ≠ banner text — the reported case.
+    const idx = resolveEntryIdx(index, 'UpgradeStorage', 'Lv1Extra');
+    const out = removeKeyvalAt(entries, idx);
+    expect(out.filter(e => e.type === 'keyval').map(e => e.key)).toEqual(['Slots']);
+  });
+
+  it('maps a schema section id onto the file section name for appends', () => {
+    const entries = parseConfigFile(lua);
+    const index = buildSectionKeyIndex(entries);
+    const hint = resolveSectionName(index, 'UpgradeStorage', ['Lv1Extra', 'Lv2Extra']);
+    expect(hint).toBe('UPGRADE STORAGE EXTRA CAPACITY');
+
+    const out = appendKeyval(entries, 'Lv2Extra', 10, { sectionHint: hint });
+    const lines = serializeConfig(out).split('\n');
+    // New key lands inside its own banner block, not after the last keyval.
+    expect(lines.indexOf('Lv2Extra = 10,')).toBe(lines.indexOf('Lv1Extra = 5,') + 1);
+  });
+
+  it('prefers an exact section match and never crosses real INI scopes', () => {
+    const ini = ['[DamageNumbers]', 'enabled = true', '[IncomingDamage]', 'shown = false'].join('\n');
+    const index = buildSectionKeyIndex(parseConfigFile(ini));
+    expect(resolveSectionName(index, 'DamageNumbers', ['enabled'])).toBe('DamageNumbers');
+    // Unknown INI section: must NOT borrow another scope's name.
+    expect(resolveSectionName(index, 'HitMarker', ['enabled'])).toBe('HitMarker');
+  });
+
+  it('falls back to the schema id when the section has no key in the file yet', () => {
+    const index = buildSectionKeyIndex(parseConfigFile(lua));
+    expect(resolveSectionName(index, 'Unmatched', ['NothingHere'])).toBe('Unmatched');
+  });
+});
+
+// Regression: with the flat first-hit fallback, a key name repeated under two
+// decorative banners bound BOTH schema rows to the first occurrence — the
+// second weapon's row displayed the first weapon's value, and editing it
+// silently overwrote the first weapon's line. Section names are now matched
+// case/punctuation-insensitively (banner prose vs schema identifier), and the
+// flat fallback only fires for a key that exists exactly once in the file.
+describe('duplicate key names across decorative banners', () => {
+  const weapons = [
+    '-- ====[ AK47 RIFLE ]====',
+    'Damage = 30,',
+    'Recoil = 1.2,',
+    '-- ====[ M4 CARBINE ]====',
+    'Damage = 25,',
+    'Ammo = 30,',
+  ].join('\n');
+
+  const entries = parseConfigFile(weapons);
+  const index = buildSectionKeyIndex(entries);
+  const valueAt = (idx) => entries[idx]?.value;
+
+  it('binds each schema section to its own banner via normalized name match', () => {
+    expect(valueAt(resolveEntryIdx(index, 'Ak47Rifle', 'Damage'))).toBe('30');
+    expect(valueAt(resolveEntryIdx(index, 'M4Carbine', 'Damage'))).toBe('25');
+  });
+
+  it('matches a banner that expands the schema id (prefix), when unambiguous', () => {
+    // "AK47 RIFLE" starts with "AK47" — and it's the only banner that does.
+    expect(valueAt(resolveEntryIdx(index, 'AK47', 'Damage'))).toBe('30');
+    expect(resolveSectionName(index, 'M4', ['Damage'])).toBe('M4 CARBINE');
+  });
+
+  it('hides the row instead of binding it to the wrong line when unresolvable', () => {
+    // Schema ids that match no banner + a key that exists twice → ambiguous.
+    expect(resolveEntryIdx(index, 'Weapon1', 'Damage')).toBeUndefined();
+    expect(resolveEntryIdx(index, 'Weapon2', 'Damage')).toBeUndefined();
+    // A key that exists only once still resolves through the flat fallback.
+    expect(valueAt(resolveEntryIdx(index, 'Weapon1', 'Ammo'))).toBe('30');
+  });
+
+  it('does not let an ambiguous sibling key steer an append', () => {
+    // 'Damage' lives under both banners → unusable; 'Recoil' is unique → wins.
+    expect(resolveSectionName(index, 'Weapon1', ['Damage'])).toBe('Weapon1');
+    expect(resolveSectionName(index, 'Weapon1', ['Damage', 'Recoil'])).toBe('AK47 RIFLE');
+  });
+});
+
+describe('CRLF + quote-style preservation (bug #11)', () => {
+  it('round-trips a CRLF file with keyval + comment lines exactly', () => {
+    const text = 'Damage = 100\r\n-- note\r\nName = "AK47"\r\n';
+    // Previously keyval lines were rebuilt LF-only, mixing EOLs with the
+    // CRLF-preserving comment/blank lines. Now unmodified lines are verbatim.
     expect(serializeConfig(parseConfigFile(text))).toBe(text);
   });
 
-  it('escapes quotes the user typed into a double-quoted value', () => {
-    const entries = parseConfigFile('name = "AK47",');
-    entries[0].value = 'The "Best" Gun';
-    expect(serializeConfig(entries)).toBe('name = "The \\"Best\\" Gun",');
+  it('keeps CRLF on a line whose value was edited', () => {
+    const entries = parseConfigFile('Name = "AK47"\r\nDamage = 100\r\n');
+    const nameIdx = entries.findIndex(e => e.type === 'keyval' && e.key === 'Name');
+    entries[nameIdx] = { ...entries[nameIdx], value: 'M4' };
+    expect(serializeConfig(entries)).toBe('Name = "M4"\r\nDamage = 100\r\n');
   });
 
-  it('unescapes escaped quotes for the editor and reserializes identically', () => {
-    const text = 'msg = "a \\"quoted\\" word",';
-    const entries = parseConfigFile(text);
-    expect(entries[0].value).toBe('a "quoted" word');
-    expect(serializeConfig(entries)).toBe(text);
+  it('round-trips a single-quoted value verbatim when unmodified', () => {
+    const text = "Name = 'AK47',\n";
+    expect(serializeConfig(parseConfigFile(text))).toBe(text);
   });
 
-  it('round-trips backslashes without doubling them', () => {
-    const text = 'path = "C:\\\\Games\\\\HumanitZ",';
-    const entries = parseConfigFile(text);
-    expect(entries[0].value).toBe('C:\\Games\\HumanitZ');
-    expect(serializeConfig(entries)).toBe(text);
+  it('preserves the single-quote style when the value is edited', () => {
+    const entries = parseConfigFile("Name = 'AK47',\n");
+    entries[0] = { ...entries[0], value: 'M4' };
+    expect(serializeConfig(entries)).toBe("Name = 'M4',\n");
   });
 
-  it('does not enter block-comment mode for --[[ inside a quoted value', () => {
-    const entries = parseConfigFile('A = "see --[[docs"\nB = 2\nC = 3');
-    expect(entries.map(e => e.type)).toEqual(['keyval', 'keyval', 'keyval']);
+  it('preserves unusual spacing around = on an unmodified line', () => {
+    const text = 'Damage=100\n';
+    expect(serializeConfig(parseConfigFile(text))).toBe(text);
+  });
+});
+
+describe('removeKeyval — section-less config with a sectionHint (bug #7)', () => {
+  it('removes the key even when the file has no matching section marker', () => {
+    // Schema groups "Cheats" under a "General" section, but config.lua is flat.
+    const entries = parseConfigFile('Cheats = true,\n');
+    const out = removeKeyval(entries, 'Cheats', 'General');
+    expect(out.some(e => e.type === 'keyval' && e.key === 'Cheats')).toBe(false);
+  });
+
+  it('still scopes removal to the matching section when sections DO exist', () => {
+    const entries = parseConfigFile('-- [A]\nShared = 1\n-- [B]\nShared = 2\n');
+    const out = removeKeyval(entries, 'Shared', 'B');
+    const remaining = out.filter(e => e.type === 'keyval' && e.key === 'Shared');
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].value).toBe('1'); // A's Shared survives
   });
 });

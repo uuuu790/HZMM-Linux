@@ -62,3 +62,6 @@ ds-bundle/
 .design-sync/learnings/
 .design-sync/node_modules
 .design-sync/_assets/
+
+# Local clone of Nexus-Mods/upload-action (CI pins the published action)
+nexus-upload-action/

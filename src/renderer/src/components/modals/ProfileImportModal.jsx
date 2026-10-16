@@ -12,7 +12,7 @@ const ProfileImportModal = ({ isOpen, missing, auto, manual, allMissing, downloa
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 [-webkit-app-region:no-drag]">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-zoom-in" onClick={downloading ? undefined : onCancel} />
       <div role="dialog" aria-modal="true" aria-labelledby="profile-import-title"
-        className="relative w-full max-w-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring">
+        className="relative w-full max-w-xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/60 dark:border-slate-700/50">
           <h3 id="profile-import-title" className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <DownloadCloud className="w-5 h-5" style={{ color: 'var(--accent-500)' }} />
@@ -25,7 +25,7 @@ const ProfileImportModal = ({ isOpen, missing, auto, manual, allMissing, downloa
           )}
         </div>
 
-        <div className="p-5 max-h-[60vh] overflow-y-auto">
+        <div className="p-5 max-h-[70vh] overflow-y-auto">
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">{fmt(t.profileMissingDesc, { n: missing.length })}</p>
 
           {auto.length > 0 && (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchSourcesToMods } from '../../src/main/ipc/nexus-install-tracker.js'
+import { matchSourcesToMods } from '../../src/main/ipc/nexus-install-tracker'
 
 const receipts = [
   { modId: 10, fileId: 100, version: '1.2', localMods: [{ name: 'CoolPak', modType: 'PAK' }] },

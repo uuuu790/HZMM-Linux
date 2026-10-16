@@ -2,14 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { mergeLinkIntoReceipts } from '../../src/main/ipc/nexus-install-tracker.js'
+import { mergeLinkIntoReceipts } from '../../src/main/ipc/nexus-install-tracker'
 import {
   archiveModVersion,
   listModVersions,
   pruneModVersions,
   restoreArchivedVersion,
   removePakVariants,
-} from '../../src/main/ipc/mod-versions.js'
+} from '../../src/main/ipc/mod-versions'
 
 describe('mergeLinkIntoReceipts', () => {
   it('creates a new receipt for an unknown mod', () => {
@@ -104,6 +104,24 @@ describe('mod-versions (fs)', () => {
     for (let i = 1; i <= 4; i++) archiveModVersion(P(), retention, RECEIPT, i * 1000)
     const snaps = fs.readdirSync(path.join(retention, '42')).sort()
     expect(snaps).toEqual(['3000', '4000'])
+  })
+
+  it('prune: false defers retention so a failed update cannot evict an older slot', () => {
+    // The update flow archives BEFORE installing; on install failure it deletes
+    // the fresh snapshot again. With eager pruning that ordering would already
+    // have evicted the genuinely older version — deferring keeps it alive.
+    seedMod()
+    archiveModVersion(P(), retention, RECEIPT, 1000)
+    archiveModVersion(P(), retention, RECEIPT, 2000)
+    const archived = archiveModVersion(P(), retention, RECEIPT, 3000, { prune: false })
+    expect(fs.readdirSync(path.join(retention, '42')).sort()).toEqual(['1000', '2000', '3000'])
+    // Failed install: the flow removes the new snapshot — both old slots survive.
+    fs.rmSync(archived.dir, { recursive: true, force: true })
+    expect(fs.readdirSync(path.join(retention, '42')).sort()).toEqual(['1000', '2000'])
+    // Successful install: the flow prunes afterwards — newest KEEP remain.
+    archiveModVersion(P(), retention, RECEIPT, 4000, { prune: false })
+    pruneModVersions(path.join(retention, '42'))
+    expect(fs.readdirSync(path.join(retention, '42')).sort()).toEqual(['2000', '4000'])
   })
 
   it('returns null when nothing from the receipt is on disk', () => {

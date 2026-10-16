@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { syncUe4ssModRegistry, removeFromUe4ssModRegistry } from '../../src/main/ipc/mods-registry.js'
+import { syncUe4ssModRegistry, removeFromUe4ssModRegistry } from '../../src/main/ipc/mods-registry'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'

@@ -1,0 +1,249 @@
+// BBCode + HTML → sanitized HTML for Nexus Mods descriptions.
+//
+// Nexus's v1 API returns description as a raw soup of BBCode + HTML (users
+// can paste HTML like `<div style="text-align:center">`, `<font color="red">`,
+// `<h2>`, `<table>`, etc. directly into the mod's description editor).
+//
+// Pipeline:
+//   1. Convert BBCode tags (`[b]`, `[url]`, `[img]`, `[list]`…) to HTML.
+//      Leave existing HTML untouched at this stage.
+//   2. Normalize whitespace (newline → <br>, collapse <br>s hugging blocks).
+//   3. Run the whole thing through DOMPurify.
+//      DOMPurify is a battle-tested XSS sanitizer — it strips <script>,
+//      <iframe>, event handlers, `javascript:`/`data:` URLs, and any other
+//      known-dangerous construct while keeping Nexus's layout HTML intact
+//      (divs with style, font color/size, headings, tables, etc.).
+//
+// This approach matches how Nexus's own website renders the content — we
+// trust the full HTML+BBCode output and rely on DOMPurify for safety instead
+// of maintaining our own allow-list.
+
+import DOMPurify, { type Config } from 'dompurify'
+
+const MAX_NEST_DEPTH = 20
+
+// Only allow http(s) and mailto for BBCode-produced links. DOMPurify handles
+// the same check for HTML-sourced links, so this covers the BBCode side.
+function safeUrl(url: unknown): string {
+  if (!url) return '#'
+  const trimmed = String(url).trim()
+  if (/^(https?:|mailto:)/i.test(trimmed)) return trimmed
+  if (/^[a-z0-9.-]+\.[a-z]{2,}/i.test(trimmed)) return 'https://' + trimmed
+  return '#'
+}
+
+function extractYoutubeId(raw: unknown): string | null {
+  const s = String(raw).trim()
+  const m = s.match(/(?:youtube\.com\/(?:watch\?(?:[^&]*&)*v=|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
+  if (m) return m[1]
+  if (/^[a-zA-Z0-9_-]{11}$/.test(s)) return s
+  return null
+}
+
+function bbSizeToEm(n: string): string {
+  const clamped = Math.max(1, Math.min(7, parseInt(n, 10) || 4))
+  return (0.5 + clamped * 0.15).toFixed(2) + 'em'
+}
+
+// Validate a [color=…] token against a strict CSS-color allowlist before it
+// reaches the style attribute. DOMPurify keeps inert junk like
+// `a)expression(alert(1))` (harmless on Chromium but ugly), so we reject
+// anything that isn't a hex value, a functional rgb()/hsl() form, a number/
+// percentage, or a plain color keyword.
+function isSafeCssColor(value: string): boolean {
+  const c = String(value).trim()
+  if (!c) return false
+  // #rgb / #rgba / #rrggbb / #rrggbbaa
+  if (/^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(c)) return true
+  // rgb()/rgba()/hsl()/hsla() — digits, dots, %, commas, spaces and slashes only
+  if (/^(?:rgb|hsl)a?\(\s*[0-9.,%\s/]+\)$/i.test(c)) return true
+  // Bare number or percentage (e.g. legacy "50%")
+  if (/^[0-9]+%?$/.test(c)) return true
+  // Plain CSS color keyword (red, rebeccapurple, transparent, …)
+  if (/^[a-z]+$/i.test(c)) return true
+  return false
+}
+
+type Replacer = (match: string, ...groups: string[]) => string
+
+// Simple paired BBCode → HTML tag replacements.
+const PAIRED_RULES: Array<[RegExp, string | Replacer]> = [
+  [/\[b\]([\s\S]*?)\[\/b\]/gi, '<strong>$1</strong>'],
+  [/\[i\]([\s\S]*?)\[\/i\]/gi, '<em>$1</em>'],
+  [/\[u\]([\s\S]*?)\[\/u\]/gi, '<u>$1</u>'],
+  [/\[s\]([\s\S]*?)\[\/s\]/gi, '<del>$1</del>'],
+  [/\[center\]([\s\S]*?)\[\/center\]/gi, '<div style="text-align:center">$1</div>'],
+  [/\[right\]([\s\S]*?)\[\/right\]/gi, '<div style="text-align:right">$1</div>'],
+  [/\[left\]([\s\S]*?)\[\/left\]/gi, '<div style="text-align:left">$1</div>'],
+  [/\[heading\]([\s\S]*?)\[\/heading\]/gi, '<h3>$1</h3>'],
+  [/\[h1\]([\s\S]*?)\[\/h1\]/gi, '<h2>$1</h2>'],
+  [/\[h2\]([\s\S]*?)\[\/h2\]/gi, '<h3>$1</h3>'],
+  [/\[h3\]([\s\S]*?)\[\/h3\]/gi, '<h4>$1</h4>'],
+  [/\[quote(?:=[^\]]*)?\]([\s\S]*?)\[\/quote\]/gi, '<blockquote>$1</blockquote>'],
+  [/\[code\]([\s\S]*?)\[\/code\]/gi, '<pre><code>$1</code></pre>'],
+  [/\[pre\]([\s\S]*?)\[\/pre\]/gi, '<pre>$1</pre>'],
+  [/\[spoiler(?:=([^\]]+))?\]([\s\S]*?)\[\/spoiler\]/gi, (_m, label, body) =>
+    `<details><summary>${label || 'Spoiler'}</summary>${body}</details>`],
+]
+
+// Nexus's description editor HTML-encodes whatever the author types (their
+// website decodes back at render time). So the raw API payload often looks
+// like `Extract here! &lt;br /&gt;*:&#92;SteamLibrary` — i.e. the `<br />`
+// tags and backslashes are already entities. Decoding here is what lets the
+// subsequent BBCode + DOMPurify pipeline see real tags instead of literal
+// entity text. Decoding order matters: `&amp;` goes LAST so double-encoded
+// inputs like `&amp;lt;` still render as `&lt;` instead of `<`.
+// String.fromCodePoint throws a RangeError for anything outside 0..0x10FFFF
+// (e.g. a bogus `&#9999999999;`). bbcodeToHtml runs synchronously in render
+// with no error boundary, so an unbounded value would white-screen the whole
+// app -- clamp the range and fall back to the raw entity text on anything out
+// of range or otherwise unrepresentable.
+function fromCodePointSafe(code: number, raw: string): string {
+  if (!Number.isFinite(code) || code <= 0 || code > 0x10FFFF) return raw
+  try {
+    return String.fromCodePoint(code)
+  } catch {
+    return raw
+  }
+}
+
+function decodeHtmlEntities(str: unknown): string {
+  if (!str) return ''
+  return String(str)
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&nbsp;/gi, '\u00A0')
+    .replace(/&#(\d+);/g, (_m, n) => fromCodePointSafe(parseInt(n, 10), _m))
+    .replace(/&#[xX]([0-9a-fA-F]+);/g, (_m, h) => fromCodePointSafe(parseInt(h, 16), _m))
+    .replace(/&amp;/gi, '&')
+}
+
+function bbcodeToRawHtml(input: unknown): string {
+  let s = decodeHtmlEntities(String(input))
+
+  // Self-closing / standalone BBCode
+  s = s.replace(/\[br\]/gi, '<br>')
+  s = s.replace(/\[hr\]/gi, '<hr>')
+  s = s.replace(/\[line\]/gi, '<hr>')
+
+  for (let iter = 0; iter < MAX_NEST_DEPTH; iter++) {
+    const before = s
+
+    // Split by type so each call matches one String#replace overload.
+    for (const [re, repl] of PAIRED_RULES) s = typeof repl === 'string' ? s.replace(re, repl) : s.replace(re, repl)
+
+    s = s.replace(/\[color=([#a-z0-9()\s,%.-]+)\]([\s\S]*?)\[\/color\]/gi,
+      (_m, c, text) => isSafeCssColor(c)
+        ? `<span style="color:${c.trim()}">${text}</span>`
+        : text)
+
+    s = s.replace(/\[size=(\d+)\]([\s\S]*?)\[\/size\]/gi,
+      (_m, n, text) => `<span style="font-size:${bbSizeToEm(n)}">${text}</span>`)
+
+    s = s.replace(/\[font=([a-z0-9\s,'"-]+)\]([\s\S]*?)\[\/font\]/gi,
+      (_m, f, text) => `<span style="font-family:${f.trim()}">${text}</span>`)
+
+    s = s.replace(/\[url=([^\]]+)\]([\s\S]*?)\[\/url\]/gi,
+      (_m, url, text) => `<a href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer">${text}</a>`)
+
+    s = s.replace(/\[url\]([\s\S]*?)\[\/url\]/gi,
+      (_m, url) => `<a href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer">${url}</a>`)
+
+    s = s.replace(/\[email(?:=[^\]]*)?\]([\s\S]*?)\[\/email\]/gi,
+      (_m, addr) => `<a href="mailto:${addr}">${addr}</a>`)
+
+    // [img=URL]...[/img] and standalone [img=URL] — the attribute form (like
+    // [url=..]) that Nexus authors commonly use. The bare-form rule below can't
+    // match it (it requires whitespace after `img`, not `=`).
+    s = s.replace(/\[img=([^\]]+)\][\s\S]*?\[\/img\]/gi, (_m, url) => {
+      const u = safeUrl(url)
+      return u === '#' ? '' : `<img src="${u}" alt="" loading="lazy">`
+    })
+    s = s.replace(/\[img=([^\]]+)\]/gi, (_m, url) => {
+      const u = safeUrl(url)
+      return u === '#' ? '' : `<img src="${u}" alt="" loading="lazy">`
+    })
+
+    s = s.replace(/\[img(?:\s+[^\]]*)?\]([\s\S]*?)\[\/img\]/gi, (_m, url) => {
+      const u = safeUrl(url)
+      if (u === '#') return ''
+      return `<img src="${u}" alt="" loading="lazy">`
+    })
+
+    // CSP blocks iframes, so [youtube] degrades to a plain link.
+    s = s.replace(/\[youtube\]([\s\S]*?)\[\/youtube\]/gi, (_m, v) => {
+      const id = extractYoutubeId(v)
+      if (!id) return ''
+      const url = `https://www.youtube.com/watch?v=${id}`
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer">▶ YouTube: ${url}</a>`
+    })
+
+    // Strip redundant [/*] item closers. Some authors pair [*]item[/*]; once
+    // [*] delimits items the closer is noise — and it was leaking into output.
+    s = s.replace(/\[\/\*\]/gi, '')
+
+    s = s.replace(/\[list=1\]([\s\S]*?)\[\/list\]/gi, (_m, body: string) => {
+      const items = body.split(/\[\*\]/).map(x => x.trim()).filter(Boolean)
+      return `<ol>${items.map(i => `<li>${i}</li>`).join('')}</ol>`
+    })
+    s = s.replace(/\[list\]([\s\S]*?)\[\/list\]/gi, (_m, body: string) => {
+      const items = body.split(/\[\*\]/).map(x => x.trim()).filter(Boolean)
+      return `<ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>`
+    })
+
+    // Bare [*] items the author wrote without a [list] wrapper. Grab a run of
+    // consecutive [*]-led segments (each segment runs to the next [*]) and wrap
+    // it in one <ul>. `[^[]|\[(?!\*\])` lets item text keep already-converted
+    // HTML and stray `[` that aren't list markers.
+    s = s.replace(/\[\*\](?:[^[]|\[(?!\*\]))*(?:\[\*\](?:[^[]|\[(?!\*\]))*)*/g, (run) => {
+      const items = run.split(/\[\*\]/).map(x => x.trim()).filter(Boolean)
+      return items.length ? `<ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>` : run
+    })
+
+    if (s === before) break
+  }
+
+  // Newline → <br>; collapse <br>s next to block-level tags to avoid
+  // double-spacing around lists, quotes, tables, etc.
+  s = s.replace(/\r\n/g, '\n').replace(/\n/g, '<br>')
+
+  // Normalize self-closed <br />/<br/> into bare <br> so the collapse rules
+  // below catch them too (Nexus emits all three variants interchangeably).
+  s = s.replace(/<br\s*\/>/gi, '<br>')
+
+  const BLOCK = 'blockquote|ul|ol|li|pre|h[1-6]|details|summary|hr|div|p|table|thead|tbody|tr|td|th|center|section|article|header|footer'
+  s = s.replace(new RegExp(`<br>\\s*(<(?:\\/)?(?:${BLOCK})\\b)`, 'gi'), '$1')
+  s = s.replace(new RegExp(`(<\\/(?:${BLOCK})>)\\s*<br>`, 'gi'), '$1')
+
+  // Nexus authors often stack 3-5 <br>s for vertical space. Cap at 2
+  // consecutive so a paragraph break renders as one blank line, not four.
+  s = s.replace(/(?:<br>\s*){3,}/gi, '<br><br>')
+
+  return s
+}
+
+// DOMPurify config — allow Nexus's rich layout HTML, block anything that
+// could run code or fetch cross-origin in ways CSP might miss.
+const PURIFY_CONFIG: Config = {
+  // Extend DOMPurify's default allow-list with tags Nexus uses but the
+  // default may strip (center is deprecated but Nexus still emits it).
+  ADD_TAGS: ['center'],
+  // Allow target="_blank" and loading="lazy" on produced elements.
+  ADD_ATTR: ['target', 'loading'],
+  // Explicit deny-list — CSP already blocks these but make it obvious here.
+  FORBID_TAGS: ['script', 'iframe', 'embed', 'object', 'form', 'input', 'style', 'link', 'meta'],
+  // Drop any `on*` event handler attrs (DOMPurify does this by default too).
+  ALLOW_UNKNOWN_PROTOCOLS: false,
+  // Keep style attr (Nexus uses text-align:center, color, font-size, etc.)
+  // but DOMPurify still sanitizes its content (blocks expression(), url(), …).
+}
+
+export function bbcodeToHtml(input: unknown): string {
+  if (!input) return ''
+  const raw = bbcodeToRawHtml(input)
+  return DOMPurify.sanitize(raw, PURIFY_CONFIG)
+}
+
+export const _testInternals = { safeUrl, extractYoutubeId, bbSizeToEm, bbcodeToRawHtml, decodeHtmlEntities }

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import appIcon from './assets/icon.png';
 import { clampZoom, stepZoom, ZOOM_STEP } from './utils/zoom';
 
@@ -43,10 +43,14 @@ import { useAppInit } from './hooks/useAppInit';
 import { useUpdateChecker } from './hooks/useUpdateChecker';
 import { useNxm } from './hooks/useNxm';
 import { useNexusSources } from './hooks/useNexusSources';
+import { useAmbientMotion } from './hooks/useAmbientMotion';
 
 // ==========================================
 // Main App Component
 // ==========================================
+
+// Sidebar tab order — used to pick the tab-switch slide direction.
+const tabOrder = ['dashboard', 'modules', 'profiles', 'nexus', 'steamWorkshop', 'settings'];
 
 export default function App() {
   // --- Language ---
@@ -74,7 +78,6 @@ export default function App() {
   // --- Tab ---
   const [activeTab, setActiveTab] = useState('dashboard');
   const prevTabRef = useRef('dashboard');
-  const tabOrder = ['dashboard', 'modules', 'profiles', 'nexus', 'steamWorkshop', 'settings'];
 
   // --- Config Editor ---
   const [configEditorMod, setConfigEditorMod] = useState(null);
@@ -89,6 +92,9 @@ export default function App() {
     const el = scrollAreaRef.current;
     if (!el) return;
     el.classList.add('is-scrolling');
+    // Fade the top clip edge only while actually scrolled — see
+    // .scroll-top-fade in appStyles.js for why it can't be resident.
+    el.classList.toggle('scroll-top-fade', el.scrollTop > 2);
     if (scrollIdleTimerRef.current) clearTimeout(scrollIdleTimerRef.current);
     scrollIdleTimerRef.current = setTimeout(() => {
       el.classList.remove('is-scrolling');
@@ -110,6 +116,8 @@ export default function App() {
   }, []);
 
   const { isDark, setIsDark, themeId, setThemeId, toggleDark, changeTheme } = useTheme({ persistSetting });
+
+  useAmbientMotion();
 
   const handleSetMinimizeToTray = useCallback((enabled) => {
     setMinimizeToTray(enabled);
@@ -209,19 +217,18 @@ export default function App() {
     logLines, logLoading,
     rescanning,
     handleDetectPath, handleBrowsePath, handleLaunch,
-    handleUe4ssAction,
+    handleUe4ssAction, handleUe4ssManualInstall,
     handleConflictScan, handleMakeWin, makingWin,
-    handleLaunchVanilla, refreshConflicts, handleApplyPakOrder, applyingPakOrder,
     handleOpenLogs, handleOpenLogFile,
     handleRescan,
     initGame,
   } = useAppInit({ addToast, t, refreshMods });
 
   const {
-    updateMap: modUpdateMap, updateCount: modUpdateCount, updatingModId, updateAllBusy, handleUpdateMod, handleUpdateAll, runCheck: recheckUpdates,
+    updateMap: modUpdateMap, updateCount: modUpdateCount, updatingModId, updateAllBusy, updateProgress: modUpdateProgress, updateAllProgress, handleUpdateMod, handleUpdateAll, runCheck: recheckUpdates,
   } = useUpdateChecker({ nexusApiKey, addToast, t, refreshMods });
 
-  const { nxmEnabled, handleSetNxmEnabled } = useNxm({ addToast, t, refreshMods });
+  const { nxmEnabled, handleSetNxmEnabled } = useNxm({ addToast, t, refreshMods, recheckUpdates });
 
   // filename → Nexus source lookups (claim + rollback features)
   const { linkedSet: nexusLinkedSet, rollbackMap, refreshNexusSources } = useNexusSources({ modules });
@@ -296,6 +303,18 @@ export default function App() {
   // Tab Animation
   // ==========================================
 
+  // Direction must be locked in AT the tab switch. Computing it inline in JSX
+  // re-evaluates on every render — and the effect below has already synced
+  // prevTabRef by the time the next unrelated re-render happens (e.g. pressing
+  // rescan flips `rescanning`), so the class would flip left↔right and restart
+  // the entrance animation: the whole tab content visibly re-fades ("flash").
+  // useMemo pins the class until activeTab actually changes; reading the ref
+  // here is safe because the memo runs before the effect updates it.
+  const tabAnimClass = useMemo(
+    () => (tabOrder.indexOf(activeTab) >= tabOrder.indexOf(prevTabRef.current) ? 'animate-tab-left' : 'animate-tab-right'),
+    [activeTab]
+  );
+
   useEffect(() => {
     prevTabRef.current = activeTab;
   }, [activeTab]);
@@ -320,7 +339,12 @@ export default function App() {
       }
 
       try {
-        await Promise.all([
+        // allSettled, NOT all: these init steps are independent, and any one of
+        // them rejecting (e.g. an unreadable mods/backups dir making an IPC
+        // handler throw) must neither skip the others' state updates nor — via
+        // the finally below — prevent splash dismissal. A rejecting Promise.all
+        // here used to leave the opaque splash up forever with the app unusable.
+        await Promise.allSettled([
           window.api.locale.getPreference().then(v => setLang(v)),
           window.api.locale.getSupported().then(v => setSupportedLocales(v)),
           window.api.settings.get('darkMode', true).then(v => { setIsDark(v); window.api?.system?.setTitleBarTheme(v); document.documentElement.classList.toggle('dark', v); }),
@@ -337,13 +361,8 @@ export default function App() {
           // Minimum splash display time
           new Promise(r => setTimeout(r, 3000)),
         ]);
-      } catch (err) {
-        // One failed init call (unreadable Steam vdf, permission error on a
-        // mod dir, …) must not strand the user on the splash screen forever —
-        // the app is still usable, individual panels show their own errors.
-        console.error('Init failed (continuing to UI):', err);
       } finally {
-        // Dismiss HTML splash
+        // Dismiss HTML splash — ALWAYS, even if an init step above rejected.
         const splash = document.getElementById('splash-screen');
         if (splash) {
           splash.classList.add('exit');
@@ -440,7 +459,7 @@ export default function App() {
         activeTab={activeTab} setActiveTab={setActiveTab} setActiveModuleId={setActiveModuleId}
         appIcon={appIcon} t={t}
         isGameRunning={isGameRunning} launchState={launchState} gameVersion={gameVersion}
-        handleLaunch={handleLaunch} handleLaunchVanilla={handleLaunchVanilla} appVersion={appVersion}
+        handleLaunch={handleLaunch} appVersion={appVersion}
         updateState={updateState} updateInfo={updateInfo}
         modUpdateCount={modUpdateCount}
       />
@@ -449,12 +468,16 @@ export default function App() {
       {/* Split into two zones: a pinned header bar and a scrollable area
           below it. The scroll-thumb now starts at the bottom of the HZMM
           title row instead of at the top of the window. */}
-      <div className="flex-1 flex flex-col h-screen relative z-10 md:pl-12 min-w-0">
+      {/* min-w-0 lets this column shrink to the window. A flex item's automatic
+          minimum width is its min-content width, which counts the full length
+          of every `truncate` line, so long translations would otherwise push
+          it past the edge, where the root's overflow-hidden clips it. */}
+      <div className="flex-1 min-w-0 flex flex-col h-screen relative z-10 md:pl-12">
 
         <div className="absolute top-0 left-0 w-full h-12 [-webkit-app-region:drag]" />
 
         {/* Pinned header zone — does not scroll */}
-        <div className="shrink-0 w-full flex flex-col items-center pt-16 px-4 md:px-8">
+        <div className="shrink-0 w-full flex flex-col items-center pt-12 px-4 md:px-8">
           <AppHeader
             activeTab={activeTab} t={t} isDark={isDark}
             lang={lang} supportedLocales={supportedLocales}
@@ -465,16 +488,19 @@ export default function App() {
 
         {/* Scrollable content zone — takes remaining height. Scrollbar thumb
             auto-hides when idle (see .scroll-fade-thumb in appStyles.js and
-            the handleContentScroll handler above). */}
+            the handleContentScroll handler above). pt-1.5 is load-bearing:
+            first-row focus rings (ring-2) paint OUTSIDE the border box, and
+            overflow clips at the padding edge — without top padding the ring's
+            upper arc gets sliced flat while "scrolled to the very top". */}
         <div
           ref={scrollAreaRef}
           onScroll={handleContentScroll}
-          className="scroll-fade-thumb flex-1 w-full overflow-auto scroll-smooth flex flex-col px-4 md:px-8 pb-12"
+          className="scroll-fade-thumb flex-1 w-full overflow-auto scroll-smooth flex flex-col px-4 md:px-8 pt-1.5 pb-12"
         >
         <main
           className={`tab-width-spring w-full flex-1 mx-auto relative z-10 ${activeTab === 'nexus' ? 'max-w-[1600px]' : 'max-w-6xl'}`}
         >
-          <div key={activeTab} className={tabOrder.indexOf(activeTab) >= tabOrder.indexOf(prevTabRef.current) ? 'animate-tab-left' : 'animate-tab-right'}>
+          <div key={activeTab} className={tabAnimClass}>
 
           {activeTab === 'dashboard' && (
             <DashboardTab
@@ -485,7 +511,15 @@ export default function App() {
               ue4ssStatus={ue4ssStatus} ue4ssProgress={ue4ssProgress}
               ue4ssVersion={ue4ssVersion} isProcessing={isProcessing}
               handleUe4ssAction={handleUe4ssAction}
+              handleUe4ssManualInstall={handleUe4ssManualInstall}
               handleInstallWithPreview={handleInstallWithPreview}
+              modUpdateCount={modUpdateCount}
+              conflicts={conflicts}
+              handleConflictScan={handleConflictScan}
+              backups={backups}
+              backupLoading={backupLoading}
+              handleBackup={handleBackup}
+              onOpenModules={(type) => { setFilterType(type || 'all'); setActiveModuleId(null); setActiveTab('modules'); }}
             />
           )}
 
@@ -514,18 +548,17 @@ export default function App() {
               handleRescan={handleRescanAndRecheck} rescanning={rescanning}
               modUpdateMap={modUpdateMap}
               updatingModId={updatingModId}
+              updateProgress={modUpdateProgress}
               onUpdateMod={handleUpdateMod}
               updateCount={modUpdateCount}
               onUpdateAll={handleUpdateAll}
               updateAllBusy={updateAllBusy}
-              onApplyPakOrder={handleApplyPakOrder}
-              applyingPakOrder={applyingPakOrder}
-              refreshConflicts={refreshConflicts}
+              updateAllProgress={updateAllProgress}
+              nexusApiKey={nexusApiKey}
               nexusLinkedSet={nexusLinkedSet}
               onLinkMod={handleLinkMod}
               rollbackMap={rollbackMap}
               onRollbackMod={handleRollbackMod}
-              nexusApiKey={nexusApiKey}
             />
             </Suspense>
           )}
@@ -582,10 +615,10 @@ export default function App() {
               handleConflictScan={handleConflictScan} handleOpenLogs={handleOpenLogs}
               appVersion={appVersion} updateState={updateState}
               updateInfo={updateInfo} updateProgress={updateProgress}
+              updateError={updateError}
               handleCheckUpdate={handleCheckUpdate}
               handleDownloadUpdate={handleDownloadUpdate}
               handleInstallUpdate={handleInstallUpdate}
-              updateError={updateError}
               backups={backups} backupLoading={backupLoading}
               handleBackup={handleBackup}
               handleListBackups={handleListBackups}

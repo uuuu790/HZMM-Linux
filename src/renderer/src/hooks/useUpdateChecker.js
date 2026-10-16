@@ -9,6 +9,22 @@ export function useUpdateChecker({ nexusApiKey, addToast, t, refreshMods }) {
   const [checking, setChecking] = useState(false);
   const [updatingModId, setUpdatingModId] = useState(null);
   const [updateAllBusy, setUpdateAllBusy] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState(null);
+  // { current, total } while "update all" runs — drives the toolbar "2/5" label.
+  const [updateAllProgress, setUpdateAllProgress] = useState(null);
+
+  // Download percent (0-100) for the mod currently being updated. Subscribed
+  // only while an update is in flight — the same 'mods:download-progress'
+  // channel also fires for Nexus-tab quick installs and nxm:// downloads, and
+  // those must not light up the Modules-tab update button. -1 (unknown total
+  // size) maps to null so the button falls back to the indeterminate label.
+  useEffect(() => {
+    if (!updatingModId) return undefined;
+    const unsub = window.api?.nexus?.onDownloadProgress?.((p) => {
+      setUpdateProgress(typeof p === 'number' && p >= 0 ? p : null);
+    });
+    return () => { unsub?.(); setUpdateProgress(null); };
+  }, [updatingModId]);
 
   // filename -> { modId, latestFileId, latestVersion, currentVersion, ... }
   const updateMap = useMemo(() => {
@@ -93,8 +109,9 @@ export function useUpdateChecker({ nexusApiKey, addToast, t, refreshMods }) {
     setUpdateAllBusy(true);
     let ok = 0, failed = 0;
     try {
-      for (const info of targets) {
+      for (const [i, info] of targets.entries()) {
         setUpdatingModId(info.modId);
+        setUpdateAllProgress({ current: i + 1, total: targets.length });
         try {
           await window.api.nexus.updateFile(info.modId, info.latestFileId, info.latestVersion || undefined);
           ok++;
@@ -105,6 +122,7 @@ export function useUpdateChecker({ nexusApiKey, addToast, t, refreshMods }) {
     } finally {
       setUpdatingModId(null);
       setUpdateAllBusy(false);
+      setUpdateAllProgress(null);
     }
     addToast(
       `${t.updateAllDone || 'Updates finished'}: ${ok} ✓${failed > 0 ? ` / ${failed} ✕` : ''}`,
@@ -114,5 +132,5 @@ export function useUpdateChecker({ nexusApiKey, addToast, t, refreshMods }) {
     await runCheck(true); // re-check so the badges clear
   }, [updateAllBusy, nexusApiKey, results, addToast, t, refreshMods, runCheck]);
 
-  return { updateMap, updateCount, checking, updatingModId, updateAllBusy, runCheck, handleUpdateMod, handleUpdateAll };
+  return { updateMap, updateCount, checking, updatingModId, updateAllBusy, updateProgress, updateAllProgress, runCheck, handleUpdateMod, handleUpdateAll };
 }

@@ -3,6 +3,16 @@ productName: HZMM Manager
 directories:
   buildResources: resources
   output: dist
+# Ship only the electron-vite build; production node_modules are added by
+# electron-builder on its own. Without this list the whole project folder
+# (src, tests, logs, screenshots, worktrees, gitignored clones) lands in app.asar.
+files:
+  - out/**
+  - package.json
+# 7za must live outside app.asar to be spawnable (archive.js swaps
+# app.asar -> app.asar.unpacked when resolving the binary path).
+asarUnpack:
+  - node_modules/7zip-bin/**
 linux:
   target:
     - AppImage

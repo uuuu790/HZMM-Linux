@@ -27,10 +27,10 @@ test('Custom window controls render (Linux-only)', async () => {
 
 test('nxm:// handler toggle renders in Settings (no side effects)', async () => {
   await switchTab(page, 'settings');
-  // The nxm card uses the Link2 icon; the toggle itself registers a .desktop
-  // file via xdg-mime, so this test only asserts presence — clicking it would
-  // mutate the host's protocol handler.
-  const nxmCard = page.locator('svg.lucide-link2').first();
+  // The nxm row uses the MousePointerClick icon; the toggle itself registers a
+  // .desktop file via xdg-mime, so this test only asserts presence — clicking
+  // it would mutate the host's protocol handler.
+  const nxmCard = page.locator('svg.lucide-mouse-pointer-click').first();
   await expect(nxmCard, 'nxm handler card exists').toBeAttached({ timeout: 10_000 });
 });
 

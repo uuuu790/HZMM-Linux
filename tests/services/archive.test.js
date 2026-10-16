@@ -1,20 +1,68 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import os from 'os'
 import fs from 'fs'
 import path from 'path'
+import { execFileSync } from 'child_process'
+import { path7za } from '7zip-bin'
 import {
   isSafePath,
   validateEntries,
   analyzeArchiveStructure,
+  buildEntryNameMap,
   validateArchiveLimits,
   resolveCollisionFreePath,
   extractZip,
+  detectArchiveFormat,
+  extract7z,
+  isHostAllowed,
+  downloadFile,
   MAX_TOTAL_UNCOMPRESSED_BYTES,
   MAX_ENTRY_COUNT,
-} from '../../src/main/services/archive.js'
+} from '../../src/main/services/archive'
 
 const IS_WINDOWS = process.platform === 'win32'
 const DEST = IS_WINDOWS ? 'C:\\tmp\\hzmm-extract' : '/tmp/hzmm-extract'
+
+describe('archive.isHostAllowed — download allowlist matching (every redirect hop)', () => {
+  it('matches listed hosts exactly', () => {
+    expect(isHostAllowed('github.com', ['github.com'])).toBe(true)
+    expect(isHostAllowed('files.nexus-cdn.com', ['files.nexus-cdn.com'])).toBe(true)
+  })
+
+  it('does NOT match subdomains of a bare entry (the old wildcard hole)', () => {
+    // Regression: endsWith('.' + host) let a redirect hop reach gist.github.com
+    // when only github.com was listed — contradicting the exact-match rule the
+    // mod allowlist documents and tests.
+    expect(isHostAllowed('gist.github.com', ['github.com'])).toBe(false)
+    expect(isHostAllowed('evil.files.nexus-cdn.com', ['files.nexus-cdn.com'])).toBe(false)
+  })
+
+  it('matches subdomains only via an explicit *. entry, never the bare domain', () => {
+    expect(isHostAllowed('objects.githubusercontent.com', ['*.githubusercontent.com'])).toBe(true)
+    expect(isHostAllowed('release-assets.githubusercontent.com', ['*.githubusercontent.com'])).toBe(true)
+    expect(isHostAllowed('githubusercontent.com', ['*.githubusercontent.com'])).toBe(false)
+    expect(isHostAllowed('evilgithubusercontent.com', ['*.githubusercontent.com'])).toBe(false)
+  })
+
+  it('fails closed on a missing or empty allowlist', () => {
+    expect(isHostAllowed('github.com', undefined)).toBe(false)
+    expect(isHostAllowed('github.com', [])).toBe(false)
+  })
+
+  // Pins that downloadFile actually delegates to this matcher: a disallowed
+  // initial URL rejects BEFORE any request is made, so no network is needed.
+  it('downloadFile rejects a subdomain of a bare allowlist entry up front', async () => {
+    await expect(
+      downloadFile('https://gist.github.com/x.zip', path.join(os.tmpdir(), 'never-written.zip'), null, ['github.com'])
+    ).rejects.toThrow(/not in the allowed list/)
+  })
+
+  it('downloadFile rejects http and a missing allowlist up front', async () => {
+    const dest = path.join(os.tmpdir(), 'never-written.zip')
+    await expect(downloadFile('http://github.com/x.zip', dest, null, ['github.com'])).rejects.toThrow(/not in the allowed list/)
+    await expect(downloadFile('https://github.com/x.zip', dest, null, undefined)).rejects.toThrow(/not in the allowed list/)
+  })
+})
 
 describe('archive.isSafePath — zip slip defense', () => {
   const safeEntries = [
@@ -120,6 +168,30 @@ describe('archive.validateEntries — zip slip regression', () => {
 
   it('allows a fully-safe entry list', () => {
     expect(() => validateEntries(['a.pak', 'sub/b.pak'], DEST)).not.toThrow()
+  })
+})
+
+// Regression for the backslash pak-only extraction bug: entries are validated
+// and analyzed with `\`→`/` normalized names, but node-stream-zip / node-unrar-js
+// key entries by the ORIGINAL raw name. buildEntryNameMap must round-trip
+// normalized→original so the pak-only branch hands the raw name back to the
+// extractor instead of the normalized one (which misses and writes nothing).
+describe('archive.buildEntryNameMap — normalized→original mapping', () => {
+  it('normalizes backslashes for analysis but preserves the original name', () => {
+    const { entryNames, originalByNormalized } = buildEntryNameMap(['MyMod\\Cool_P.pak'])
+    expect(entryNames).toEqual(['MyMod/Cool_P.pak'])
+    expect(originalByNormalized.get('MyMod/Cool_P.pak')).toBe('MyMod\\Cool_P.pak')
+  })
+
+  it('leaves forward-slash names untouched', () => {
+    const { entryNames, originalByNormalized } = buildEntryNameMap(['a/b/mod.pak'])
+    expect(entryNames).toEqual(['a/b/mod.pak'])
+    expect(originalByNormalized.get('a/b/mod.pak')).toBe('a/b/mod.pak')
+  })
+
+  it('keeps the first original when two names normalize to the same key', () => {
+    const { originalByNormalized } = buildEntryNameMap(['dir\\x.pak', 'dir/x.pak'])
+    expect(originalByNormalized.get('dir/x.pak')).toBe('dir\\x.pak')
   })
 })
 
@@ -250,5 +322,105 @@ describe('archive.extractZip — backslash entry names', () => {
   it('classifies uppercase extensions the same as lowercase', () => {
     const analysis = analyzeArchiveStructure(['MODS/BIGGUN.PAK'])
     expect(analysis.type).toBe('pak-only')
+  })
+})
+
+// The Nexus CDN increasingly serves GUID paths with no extension, and the
+// download flow falls back to naming everything .zip — so the installer must
+// trust file content (magic bytes), never the extension.
+describe('archive.detectArchiveFormat — magic byte sniffing', () => {
+  let dir
+  beforeAll(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hzmm-detect-')) })
+  afterAll(() => { fs.rmSync(dir, { recursive: true, force: true }) })
+
+  const write = (name, bytes) => {
+    const p = path.join(dir, name)
+    fs.writeFileSync(p, Buffer.from(bytes))
+    return p
+  }
+
+  it('detects zip (PK\x03\x04 local file header)', () => {
+    expect(detectArchiveFormat(write('a.bin', [0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00]))).toBe('zip')
+  })
+
+  it('detects empty zip (PK\x05\x06 end-of-central-directory)', () => {
+    expect(detectArchiveFormat(write('b.bin', [0x50, 0x4b, 0x05, 0x06, ...Array(18).fill(0)]))).toBe('zip')
+  })
+
+  it('detects rar v4 despite a .zip extension', () => {
+    expect(detectArchiveFormat(write('c.zip', [0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00, 0x01]))).toBe('rar')
+  })
+
+  it('detects rar v5 despite a .zip extension', () => {
+    expect(detectArchiveFormat(write('d.zip', [0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00]))).toBe('rar')
+  })
+
+  it('detects 7z despite a .zip extension', () => {
+    expect(detectArchiveFormat(write('e.zip', [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0x00, 0x04]))).toBe('7z')
+  })
+
+  it('returns unknown for an HTML error page saved as .zip', () => {
+    expect(detectArchiveFormat(write('f.zip', Buffer.from('<html><body>403 Forbidden</body></html>')))).toBe('unknown')
+  })
+
+  it('returns unknown for an empty file', () => {
+    expect(detectArchiveFormat(write('g.zip', []))).toBe('unknown')
+  })
+
+  it('returns unknown for a missing file instead of throwing', () => {
+    expect(detectArchiveFormat(path.join(dir, 'does-not-exist.zip'))).toBe('unknown')
+  })
+})
+
+describe('archive.extract7z — 7z extraction', () => {
+  let dir, pakOnly7z, ue4ss7z
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hzmm-7z-'))
+
+    // pak-only fixture: sub/TestMod_P.pak + readme.txt
+    const pakSrc = path.join(dir, 'pak-src')
+    fs.mkdirSync(path.join(pakSrc, 'sub'), { recursive: true })
+    fs.writeFileSync(path.join(pakSrc, 'sub', 'TestMod_P.pak'), 'PAKDATA')
+    fs.writeFileSync(path.join(pakSrc, 'readme.txt'), 'hello')
+    pakOnly7z = path.join(dir, 'pak-only.7z')
+    execFileSync(path7za, ['a', pakOnly7z, '.'], { cwd: pakSrc })
+
+    // ue4ss fixture: MyMod/Scripts/main.lua
+    const ueSrc = path.join(dir, 'ue-src')
+    fs.mkdirSync(path.join(ueSrc, 'MyMod', 'Scripts'), { recursive: true })
+    fs.writeFileSync(path.join(ueSrc, 'MyMod', 'Scripts', 'main.lua'), 'print("hi")')
+    ue4ss7z = path.join(dir, 'ue4ss.7z')
+    execFileSync(path7za, ['a', ue4ss7z, '.'], { cwd: ueSrc })
+  })
+  afterAll(() => { fs.rmSync(dir, { recursive: true, force: true }) })
+
+  it('is detected as 7z by magic bytes even when named .zip', () => {
+    const disguised = path.join(dir, 'disguised.zip')
+    fs.copyFileSync(pakOnly7z, disguised)
+    expect(detectArchiveFormat(disguised)).toBe('7z')
+  })
+
+  it('analyzeOnly reports pak-only type with forward-slash entry names', async () => {
+    const analysis = await extract7z(pakOnly7z, null, true)
+    expect(analysis.type).toBe('pak-only')
+    expect(analysis.mods).toEqual([{ name: 'TestMod', modType: 'PAK' }])
+    expect(analysis.entryNames).toContain('sub/TestMod_P.pak')
+  })
+
+  it('pak-only extraction lands paks at destDir root and leaves no extras', async () => {
+    const dest = path.join(dir, 'out-pak')
+    await extract7z(pakOnly7z, dest)
+    expect(fs.existsSync(path.join(dest, 'TestMod_P.pak'))).toBe(true)
+    expect(fs.readFileSync(path.join(dest, 'TestMod_P.pak'), 'utf8')).toBe('PAKDATA')
+    expect(fs.existsSync(path.join(dest, 'readme.txt'))).toBe(false)
+    expect(fs.existsSync(path.join(dest, 'sub'))).toBe(false)
+    expect(fs.readdirSync(dest).filter(n => n.startsWith('_hzmm'))).toEqual([])
+  })
+
+  it('non-pak-only extraction preserves directory structure', async () => {
+    const dest = path.join(dir, 'out-ue')
+    const analysis = await extract7z(ue4ss7z, dest)
+    expect(analysis.type).toBe('ue4ss-mod')
+    expect(fs.existsSync(path.join(dest, 'MyMod', 'Scripts', 'main.lua'))).toBe(true)
   })
 })

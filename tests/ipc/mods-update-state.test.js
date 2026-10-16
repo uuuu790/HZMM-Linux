@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { captureModState, restoreModState } from '../../src/main/ipc/mods-update-state.js'
+import { captureModState, restoreModState } from '../../src/main/ipc/mods-update-state'
 
 // Real-fs tests against temp dirs — both functions are pure fs + injected
 // paths, mirroring how nexus:update-file drives them around a reinstall.

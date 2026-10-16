@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { readPakIndex } from '../../src/main/services/pak-parser.js'
+import { readPakIndex } from '../../src/main/services/pak-parser'
 
 // Synthesized paks following UE4's on-disk serialization:
 //   v7-v9 index: MountPoint, NumEntries, [FString name + FPakEntry]* where the

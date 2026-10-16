@@ -11,13 +11,17 @@ const ToastContainer = ({ toasts, onDismiss }) => {
             pointer-events-auto flex items-center gap-3 px-5 py-3.5 min-w-[280px] max-w-[400px]
             rounded-2xl backdrop-blur-xl border
             animate-toast-in
+            ${/* Near-opaque tinted surfaces: a translucent (15%) tint let
+                 whatever sat BEHIND the toast decide the text contrast —
+                 dark page content under light mode made slate-700 text
+                 unreadable. 95% tinted panels keep contrast self-contained. */''}
             ${toast.type === 'success'
-              ? 'bg-emerald-500/15 dark:bg-emerald-500/10 border-emerald-300/40 dark:border-emerald-500/20 shadow-[0_10px_15px_-3px_rgba(16,185,129,0.1)]'
+              ? 'bg-emerald-50/95 dark:bg-emerald-950/90 border-emerald-300/60 dark:border-emerald-500/30 shadow-[0_10px_15px_-3px_rgba(16,185,129,0.15)]'
               : toast.type === 'error'
-              ? 'bg-rose-500/15 dark:bg-rose-500/10 border-rose-300/40 dark:border-rose-500/20 shadow-[0_10px_15px_-3px_rgba(244,63,94,0.1)]'
+              ? 'bg-rose-50/95 dark:bg-rose-950/90 border-rose-300/60 dark:border-rose-500/30 shadow-[0_10px_15px_-3px_rgba(244,63,94,0.15)]'
               : toast.type === 'warning'
-              ? 'bg-amber-500/15 dark:bg-amber-500/10 border-amber-300/40 dark:border-amber-500/20 shadow-[0_10px_15px_-3px_rgba(245,158,11,0.1)]'
-              : 'bg-white/60 dark:bg-slate-900/60 border-white/40 dark:border-white/10 shadow-[0_10px_15px_-3px_rgba(0,0,0,0.05)] dark:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.2)]'
+              ? 'bg-amber-50/95 dark:bg-amber-950/90 border-amber-300/60 dark:border-amber-500/30 shadow-[0_10px_15px_-3px_rgba(245,158,11,0.15)]'
+              : 'bg-white/95 dark:bg-slate-900/95 border-slate-200/70 dark:border-white/10 shadow-[0_10px_15px_-3px_rgba(0,0,0,0.05)] dark:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.2)]'
             }
             transition-all duration-500
           `}

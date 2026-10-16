@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decodeUtf8Chunks } from '../../src/main/ipc/nexus-v2-client.js'
+import { decodeUtf8Chunks } from '../../src/main/ipc/nexus-v2-client'
 
 describe('decodeUtf8Chunks', () => {
   it('reassembles a multi-byte char split across chunks', () => {

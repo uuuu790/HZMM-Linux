@@ -60,22 +60,17 @@ function NexusModCardImpl({ mod, t, onClick, onQuickInstall, installing, install
   return (
     <div
       onClick={onClick}
-      className={`group relative flex flex-col rounded-2xl bg-white/60 dark:bg-slate-900/50 border border-slate-200/50 dark:border-slate-700/50 overflow-hidden cursor-pointer hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_12px_28px_rgba(0,0,0,0.4)] hover:border-slate-300/70 dark:hover:border-slate-600/70 ${entranceClass}`}
+      className={`group relative flex flex-col rounded-2xl bg-white/60 dark:bg-slate-900/50 border border-slate-200/50 dark:border-slate-700/50 overflow-hidden cursor-pointer hover:border-slate-300/70 dark:hover:border-slate-600/70 ${entranceClass}`}
       style={{
         animationFillMode: 'both',
         animationDelay: `${delayMs}ms`,
         // Slide entrance is snappy (350ms) to keep the cascade feel tight —
         // longer durations make late cards feel like they drag in.
         animationDuration: entrance === 'slide' ? '350ms' : entrance === 'fade' ? '380ms' : '420ms',
-        // Hover transition scoped to the properties we actually animate.
-        // Important: Tailwind 4's -translate-y / scale / rotate utilities
-        // write to the *independent* CSS `translate` / `scale` / `rotate`
-        // properties, not the legacy `transform` shorthand — so they must be
-        // listed explicitly or the hover lift becomes a hard snap instead of
-        // a smooth rise. (`transition-all` would catch them automatically
-        // but also runs on every inherited property on hover enter/leave,
-        // which is expensive when scrolling past many cards.)
-        transition: 'transform 300ms, translate 300ms, scale 300ms, box-shadow 300ms, border-color 300ms, background-color 300ms',
+        // Hover transition scoped to the properties we actually animate
+        // (`transition-all` would run on every inherited property on hover
+        // enter/leave, which is expensive when scrolling past many cards).
+        transition: 'border-color 300ms, background-color 300ms',
         // NOTE: we intentionally do NOT use `content-visibility: auto` here.
         // That property skips layout/paint for off-screen cards, which saves
         // initial render cost — but then pays that cost at scroll time, the
@@ -132,8 +127,11 @@ function NexusModCardImpl({ mod, t, onClick, onQuickInstall, installing, install
           <User className="w-3 h-3" />
           <span className="truncate">{author}</span>
         </div>
+        {/* The clamped <p> keeps its natural height — stretching it (flex-1)
+            shows a third line under the ellipsis. The footer's mt-auto pins
+            it to the bottom instead. */}
         {mod.summary && (
-          <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed flex-1">
+          <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
             {mod.summary}
           </p>
         )}

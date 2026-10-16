@@ -5,7 +5,7 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 // UE mounts ~mods paks alphabetically (case-insensitive) and the later mount
 // wins conflicting assets — so within a conflict group the alphabetically
 // LAST filename is the one the game actually uses. Mirrors comparePakNames
-// in main/ipc/mods-order.js.
+// in main/ipc/mods-order.ts.
 function currentWinner(mods) {
   return (mods || []).reduce((w, m) =>
     w === null || String(m).toLowerCase() > String(w).toLowerCase() ? m : w, null);
@@ -22,7 +22,7 @@ const ConflictModal = ({ isOpen, onClose, scanning, conflicts, onMakeWin, making
         role="dialog"
         aria-modal="true"
         aria-labelledby="conflict-modal-title"
-        className="relative w-full max-w-md bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring"
+        className="relative w-full max-w-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/60 dark:border-slate-700/50">
           <h3 id="conflict-modal-title" className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -32,7 +32,7 @@ const ConflictModal = ({ isOpen, onClose, scanning, conflicts, onMakeWin, making
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="p-6 max-h-[60vh] overflow-y-auto">
+        <div className="p-6 max-h-[70vh] overflow-y-auto">
           {scanning ? (
             <div className="flex flex-col items-center gap-3 py-8 text-slate-400">
               <RefreshCw className="w-8 h-8 animate-spin text-amber-500" />

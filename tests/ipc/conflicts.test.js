@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { findConflicts, createPakIndexCache, MAX_PAK_CACHE } from '../../src/main/ipc/conflicts.js'
+import { findConflicts, createPakIndexCache, MAX_PAK_CACHE } from '../../src/main/ipc/conflicts'
 
 // findConflicts walks one or more paks directories, calls a PAK index reader
 // per file, and reports any resource path that ≥2 mods both ship. The unit

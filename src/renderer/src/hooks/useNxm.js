@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 // nxm:// handler wiring: the Settings toggle state plus toasts for installs
 // that arrive from the browser ("Mod Manager Download" button). The install
 // itself runs entirely in the main process — this hook only reflects it.
-export function useNxm({ addToast, t, refreshMods }) {
+export function useNxm({ addToast, t, refreshMods, recheckUpdates }) {
   const [nxmEnabled, setNxmEnabled] = useState(false);
 
   useEffect(() => {
@@ -17,8 +17,17 @@ export function useNxm({ addToast, t, refreshMods }) {
       if (ev.type === 'started') {
         addToast(t.nxmInstallStarted || 'Installing from Nexus link…', 'info');
       } else if (ev.type === 'done') {
-        addToast(t.nxmInstallDone || 'Mod installed from Nexus link', 'success');
+        // `updated` = the link hit an already-installed mod and went through
+        // the update path (state snapshot/restore + version retention).
+        addToast(
+          ev.updated
+            ? (t.updateModSuccess || 'Mod updated')
+            : (t.nxmInstallDone || 'Mod installed from Nexus link'),
+          'success'
+        );
         try { await refreshMods(); } catch { /* list refresh is best-effort */ }
+        // Re-check so the sidebar/update badges clear without an app restart.
+        if (ev.updated) { try { await recheckUpdates?.(true); } catch { /* badge refresh is best-effort */ } }
       } else if (ev.type === 'failed') {
         const msg = ev.error === 'NEXUS_API_KEY_REQUIRED'
           ? (t.nxmNeedApiKey || 'Set your Nexus API key in Settings first')
@@ -29,7 +38,7 @@ export function useNxm({ addToast, t, refreshMods }) {
       }
     });
     return off;
-  }, [addToast, t, refreshMods]);
+  }, [addToast, t, refreshMods, recheckUpdates]);
 
   const handleSetNxmEnabled = useCallback(async (enabled) => {
     if (!window.api?.nxm) return;

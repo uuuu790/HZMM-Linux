@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { compareVersions } from '../../src/main/services/app-updater.js'
+import { compareVersions } from '../../src/main/services/app-updater'
 
 // ---------------------------------------------------------------------------
 // Linux fork: the Windows-only exe-swap updater was removed. The IPC module

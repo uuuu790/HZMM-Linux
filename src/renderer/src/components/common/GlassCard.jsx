@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 
-const GlassCard = ({ children, className = '', isPill = true, onClick }) => {
+const GlassCard = ({ children, className = '', isPill = true, onClick, style }) => {
   const cardRef = useRef(null);
 
   const handleMouseMove = (e) => {
@@ -22,6 +22,7 @@ const GlassCard = ({ children, className = '', isPill = true, onClick }) => {
     <div
       ref={cardRef}
       onClick={onClick}
+      style={style}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       className={`
@@ -29,8 +30,8 @@ const GlassCard = ({ children, className = '', isPill = true, onClick }) => {
         bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl
         border border-white/80 dark:border-white/10 shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.15)]
         transition-all duration-500 ease-out outline-none focus:outline-none active:outline-none ring-0 focus:ring-0 [-webkit-tap-highlight-color:transparent]
-        hover:bg-white/80 dark:hover:bg-slate-800/80 hover:border-white/90 dark:hover:border-white/20 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(0,0,0,0.06)] dark:hover:shadow-[0_6px_20px_rgba(0,0,0,0.25)]
-        cursor-pointer
+        hover:bg-white/80 dark:hover:bg-slate-800/80 hover:border-white/90 dark:hover:border-white/20
+        ${onClick ? 'cursor-pointer' : ''}
         ${className}
       `}
     >

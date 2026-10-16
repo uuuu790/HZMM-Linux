@@ -4,7 +4,7 @@ import {
   isPathWithin,
   resolveWithin,
   assertSafeSegment,
-} from '../../src/main/services/path-safety.js'
+} from '../../src/main/services/path-safety'
 
 const IS_WINDOWS = process.platform === 'win32'
 const ROOT = IS_WINDOWS ? 'C:\\base\\mods' : '/base/mods'

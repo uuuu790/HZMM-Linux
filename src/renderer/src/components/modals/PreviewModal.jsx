@@ -22,7 +22,7 @@ const PreviewModal = ({ isOpen, onClose, previews, loading, onConfirm, onDontSho
         role="dialog"
         aria-modal="true"
         aria-labelledby="preview-modal-title"
-        className="relative w-full max-w-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring"
+        className="relative w-full max-w-xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/60 dark:border-slate-700/50">
           <h3 id="preview-modal-title" className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -34,7 +34,7 @@ const PreviewModal = ({ isOpen, onClose, previews, loading, onConfirm, onDontSho
           </button>
         </div>
 
-        <div className="p-5 max-h-[60vh] overflow-y-auto">
+        <div className="p-5 max-h-[70vh] overflow-y-auto">
           {loading ? (
             <div className="flex flex-col items-center gap-3 py-8 text-slate-400">
               <RefreshCw className="w-8 h-8 animate-spin" style={{ color: 'var(--accent-500)' }} />

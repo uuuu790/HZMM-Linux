@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { isUe4ssMod, classifyUe4ssMod } from '../../src/main/ipc/mods-scan.js'
+import { isUe4ssMod, classifyUe4ssMod } from '../../src/main/ipc/mods-scan'
 
 // Real-fs fixtures (no mock-fs) so the predicate is exercised against the
 // same Node fs semantics it sees in production. The detection contract:

@@ -1,0 +1,9 @@
+{
+  // Solution-style root: editors pick up both projects; `npm run typecheck`
+  // checks each one separately (see package.json).
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.web.json" }
+  ]
+}

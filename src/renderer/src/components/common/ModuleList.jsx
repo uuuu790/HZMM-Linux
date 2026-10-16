@@ -1,11 +1,13 @@
 import { useState, useRef, useCallback } from 'react';
-import { Trash2, CheckCircle, Power, ChevronDown, CheckSquare, Square, AlertTriangle, Pencil, ArrowUpCircle, Link2, History } from 'lucide-react';
+import { Trash2, ChevronDown, CheckSquare, Square, AlertTriangle, Pencil, ArrowUpCircle, Link2, History, Sliders } from 'lucide-react';
 import { getModIcon, cleanModName } from '../../constants/modIcons';
 import ModDetailModal from '../modals/ModDetailModal';
 import GlassCard from './GlassCard';
+import Toggle from './Toggle';
 
-// Inline editable mod name component
-function InlineModName({ mod, onRename }) {
+// Mod name with an explicit rename button. Clicking the name itself falls
+// through to the row (opens details); only the pencil enters edit mode.
+function InlineModName({ mod, onRename, t }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
@@ -60,18 +62,24 @@ function InlineModName({ mod, onRename }) {
   }
 
   return (
-    <div className="flex items-center gap-1.5 min-w-0 group/name cursor-text" onClick={startEdit}>
-      <h4
-        className="text-sm md:text-base font-bold text-slate-800 dark:text-slate-100 truncate leading-tight transition-all duration-300 group-hover/name:text-[var(--accent-600)] dark:group-hover/name:text-[var(--accent-400)]"
-      >
+    <div className="flex items-center gap-1 min-w-0">
+      <h4 className="text-sm md:text-base font-bold text-slate-800 dark:text-slate-100 truncate leading-tight transition-colors duration-300">
         {displayName}
       </h4>
-      <Pencil className="w-3 h-3 shrink-0 text-slate-400 dark:text-slate-500 opacity-0 group-hover/name:opacity-70 transition-opacity duration-200" />
+      <button
+        type="button"
+        onClick={startEdit}
+        title={t.renameMod || 'Rename'}
+        aria-label={t.renameMod || 'Rename'}
+        className="shrink-0 p-1 rounded-full text-slate-400 dark:text-slate-500 opacity-0 group-hover:opacity-80 focus-visible:opacity-100 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700/60 transition-[opacity,color,background-color] duration-200"
+      >
+        <Pencil className="w-3 h-3" />
+      </button>
     </div>
   );
 }
 
-const ModuleList = ({ modules, type, subtype, title, icon: Icon, colorClass, activeModuleId, onModuleClick, onToggle, onUninstallLocal, onOpenConfig, onRenameMod, t, lang, newlyInstalledMods, selectedMods, onToggleSelect, onRangeSelect, conflictModSet, modUpdateMap, updatingModId, onUpdateMod, nexusApiKey, nexusLinkedSet, onLinkMod, rollbackMap, onRollbackMod }) => {
+const ModuleList = ({ modules, type, subtype, title, icon: Icon, colorClass, activeModuleId, onModuleClick, onToggle, onUninstallLocal, onOpenConfig, onRenameMod, t, lang, configSet, newlyInstalledMods, selectedMods, onToggleSelect, onRangeSelect, conflictModSet, modUpdateMap, updatingModId, updateProgress, onUpdateMod, nexusApiKey, nexusLinkedSet, onLinkMod, rollbackMap, onRollbackMod }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const lastClickedRef = useRef(null);
 
@@ -131,48 +139,62 @@ const ModuleList = ({ modules, type, subtype, title, icon: Icon, colorClass, act
       </div>
 
       <div className={`grid transition-all duration-500 ease-in-out ${isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
-        <div className="overflow-hidden flex flex-col gap-2.5 px-2 py-1">
+        <div className="overflow-hidden flex flex-col gap-2 px-2 py-1">
           {filteredModules.map((mod, index) => {
             const iconInfo = getModIcon(mod);
             const modKey = mod.id || mod.filename;
             const isSelected = selectedMods?.has(mod.filename);
             const updateInfo = modUpdateMap?.get(mod.filename);
             const updateBusy = updateInfo && updatingModId === updateInfo.modId;
-            // Badge shows the mod's concrete kind: UE4SS splits by subtype so a
-            // Lua mod reads "Lua" and a cppmod reads "C++" instead of a generic
-            // "UE4SS"; PAK keeps its own label.
-            const typeLabel = mod.type === 'UE4SS' ? (mod.subtype === 'cpp' ? 'C++' : 'Lua') : mod.type;
+            const isNew = newlyInstalledMods?.has(modKey);
+            const hasConfig = configSet?.has(mod.filename);
+            const displayName = mod.customName || cleanModName(mod.title || mod.filename);
             return (
               <div
                 key={modKey}
                 className="flex flex-col relative animate-slide-up"
-                style={{ animationFillMode: 'both', animationDelay: `${index * 60}ms`, animationDuration: '600ms' }}
+                style={{ animationFillMode: 'both', animationDelay: `${Math.min(index, 20) * 25}ms`, animationDuration: '350ms' }}
               >
-                <GlassCard onClick={(e) => handleRowClick(mod, modKey, index, e)} className={`group flex flex-row items-center px-3 py-2 md:px-4 md:py-2.5 gap-3 md:gap-4 relative z-10 ${activeModuleId === modKey ? 'bg-white/80 dark:bg-slate-800/80' : ''} ${isSelected ? 'ring-2' : ''} ${newlyInstalledMods?.has(modKey) ? 'ring-2' : ''}`} style={{ ...(activeModuleId === modKey ? { boxShadow: `0 0 0 2px rgba(var(--accent-rgb), 0.5)` } : {}), ...(isSelected ? { '--tw-ring-color': 'rgba(var(--accent-rgb), 0.5)', backgroundColor: 'rgba(var(--accent-rgb), 0.03)' } : {}), ...(newlyInstalledMods?.has(modKey) ? { '--tw-ring-color': 'rgba(var(--accent-rgb), 0.6)', animation: 'newModPulse 0.8s ease-out 2' } : {}) }}>
-                  {/* Checkbox — slides in when items are selected, shows on hover otherwise */}
-                  <div className={`shrink-0 overflow-hidden transition-all duration-300 ease-out ${hasSelection ? 'w-5 md:w-6 opacity-100' : 'w-0 opacity-0 group-hover:w-5 group-hover:md:w-6 group-hover:opacity-60'}`}>
+                <GlassCard
+                  onClick={(e) => handleRowClick(mod, modKey, index, e)}
+                  className={`group flex flex-row items-center px-3 py-1.5 md:px-4 md:py-2 gap-3 relative z-10 ${isSelected || isNew ? 'ring-2' : ''}`}
+                  style={{
+                    ...(isSelected ? { '--tw-ring-color': 'rgba(var(--accent-rgb), 0.5)', backgroundColor: 'rgba(var(--accent-rgb), 0.04)' } : {}),
+                    ...(isNew ? { '--tw-ring-color': 'rgba(var(--accent-rgb), 0.6)', animation: 'newModPulse 0.8s ease-out 2' } : {}),
+                  }}
+                >
+                  {/* The type icon doubles as the selection checkbox: hovering the
+                      row (or any active selection) cross-fades it into a checkbox
+                      in place, so nothing in the row shifts sideways. */}
+                  <div className="relative w-8 h-8 md:w-9 md:h-9 shrink-0">
+                    <div className={`absolute inset-0 transition-[opacity,scale] duration-200 ${hasSelection ? 'opacity-0 scale-75' : 'group-hover:opacity-0 group-hover:scale-75'}`}>
+                      <div className={`w-full h-full flex items-center justify-center rounded-full bg-gradient-to-br ${iconInfo.color} border border-white dark:border-white/10 shadow-sm ${!mod.enabled ? 'opacity-50 grayscale' : ''}`}>
+                        <iconInfo.icon className={`w-4 h-4 ${iconInfo.iconColor}`} />
+                      </div>
+                    </div>
                     <button
+                      type="button"
                       onClick={(e) => handleCheckboxClick(mod, index, e)}
-                      className="p-0.5"
+                      className={`absolute inset-0 flex items-center justify-center rounded-full hover:bg-slate-200/60 dark:hover:bg-slate-700/50 transition-[opacity,scale,background-color] duration-200 ${hasSelection ? 'opacity-100' : 'opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100'}`}
                     >
                       {isSelected ? (
-                        <CheckSquare className="w-4 h-4 md:w-5 md:h-5 transition-transform duration-200 scale-110" style={{ color: 'var(--accent-500)' }} />
+                        <CheckSquare className="w-5 h-5" style={{ color: 'var(--accent-500)' }} />
                       ) : (
-                        <Square className="w-4 h-4 md:w-5 md:h-5 text-slate-300 dark:text-slate-600 hover:text-slate-400 dark:hover:text-slate-500 transition-colors duration-200" />
+                        <Square className="w-5 h-5 text-slate-400 dark:text-slate-500" />
                       )}
                     </button>
                   </div>
 
-                  <div className={`w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-gradient-to-br ${iconInfo.color} border border-white dark:border-white/10 shrink-0 transition-all duration-300 shadow-sm group-hover:scale-105 group-hover:shadow-md ${!mod.enabled ? 'opacity-50 grayscale' : ''}`}>
-                    <iconInfo.icon className={`w-4 h-4 md:w-5 md:h-5 ${iconInfo.iconColor}`} />
-                  </div>
-
                   <div className={`flex flex-col flex-1 min-w-0 transition-opacity duration-300 ${!mod.enabled ? 'opacity-60' : ''}`}>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <InlineModName mod={mod} onRename={onRenameMod} />
-                      <span className={`shrink-0 text-[11px] font-mono px-2 py-0.5 rounded-full border leading-none transition-colors duration-700 ${mod.hybrid ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800/50' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}>{mod.hybrid ? (t.hybrid || 'Hybrid') : (mod.version || typeLabel)}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <InlineModName mod={mod} onRename={onRenameMod} t={t} />
+                      {/* The group header already says PAK / Lua / C++, so the chip
+                          only appears when it adds something: a version or hybrid. */}
+                      {(mod.hybrid || mod.version) && (
+                        <span className={`shrink-0 text-[11px] font-mono px-2 py-0.5 rounded-full border leading-none transition-colors duration-700 ${mod.hybrid ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800/50' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}>{mod.hybrid ? (t.hybrid || 'Hybrid') : mod.version}</span>
+                      )}
                       {conflictModSet && conflictModSet.has(mod.filename) && (
-                        <span className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50" title={t.conflictDetected || 'Conflict detected'}>
+                        <span className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50" title={t.conflictResource || t.conflict || 'Conflict'}>
                           <AlertTriangle className="w-3.5 h-3.5" />
                           {t.conflict || 'Conflict'}
                         </span>
@@ -187,73 +209,78 @@ const ModuleList = ({ modules, type, subtype, title, icon: Icon, colorClass, act
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-medium transition-colors duration-700">{mod.customName ? mod.filename : (mod.description || mod.filename)}</p>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div className="flex items-center gap-1.5 md:gap-2">
-                      {updateInfo && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); if (!updateBusy) onUpdateMod(updateInfo); }}
-                          disabled={updateBusy}
-                          className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all duration-300 active:scale-95 bg-sky-500/10 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-400/40 dark:border-sky-500/30 ${updateBusy ? 'opacity-70 pointer-events-none' : 'hover:bg-sky-500/20 hover:border-sky-500/60 hover:-translate-y-0.5'}`}
-                          title={nexusApiKey ? (t.updateMod || 'Update') : (t.viewOnNexus || 'View on Nexus')}
-                        >
-                          <ArrowUpCircle className={`w-3 h-3 ${updateBusy ? 'animate-spin' : ''}`} />
-                          <span className="hidden sm:inline">{updateBusy ? (t.updating || 'Updating') : (nexusApiKey ? (t.updateMod || 'Update') : (t.viewOnNexus || 'Nexus'))}</span>
-                        </button>
-                      )}
-                      {(() => {
-                        // linked/rollback lookups key on the enabled-form name
-                        const bareName = mod.filename.replace(/\.disabled$/i, '');
-                        const rollbackInfo = rollbackMap?.get(bareName);
-                        const unlinked = nexusLinkedSet && !nexusLinkedSet.has(bareName);
-                        return (
-                          <>
-                            {rollbackInfo && onRollbackMod && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); onRollbackMod(mod); }}
-                                className="p-1.5 rounded-full text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/20 transition-all duration-300 hover:scale-110 active:scale-95"
-                                title={`${t.rollback || 'Roll back'}${rollbackInfo.version ? ` → v${rollbackInfo.version}` : ''}`}
-                              >
-                                <History className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {unlinked && onLinkMod && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); onLinkMod(mod); }}
-                                className="p-1.5 rounded-full text-slate-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-500/20 transition-all duration-300 hover:scale-110 active:scale-95"
-                                title={t.linkNexus || 'Link to Nexus'}
-                              >
-                                <Link2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </>
-                        );
-                      })()}
+                  <div className="flex items-center gap-1 md:gap-1.5 shrink-0">
+                    {updateInfo && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); onUninstallLocal(mod.filename); }}
-                        className="p-1.5 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/20 transition-all duration-300 hover:scale-110 active:scale-95"
-                        title={t.uninstall}
+                        onClick={(e) => { e.stopPropagation(); if (!updateBusy) onUpdateMod(updateInfo); }}
+                        disabled={updateBusy}
+                        className={`relative overflow-hidden flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full border transition-all duration-300 active:scale-95 bg-sky-500/10 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-400/40 dark:border-sky-500/30 ${updateBusy ? 'pointer-events-none' : 'hover:bg-sky-500/20 hover:border-sky-500/60 hover:-translate-y-0.5'}`}
+                        title={nexusApiKey ? (t.updateMod || 'Update') : (t.viewOnNexus || 'View on Nexus')}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        {/* Download progress fill — sweeps left→right behind the label.
+                            At 100% the download is done but install/extract is still
+                            running, so the full bar + spinner reads as "finishing". */}
+                        {updateBusy && updateProgress != null && (
+                          <span
+                            aria-hidden
+                            className="absolute inset-y-0 left-0 bg-sky-500/25 dark:bg-sky-400/25 transition-[width] duration-300 ease-out pointer-events-none"
+                            style={{ width: `${updateProgress}%` }}
+                          />
+                        )}
+                        <ArrowUpCircle className={`relative w-3 h-3 ${updateBusy ? 'animate-spin' : ''}`} />
+                        <span className="relative hidden sm:inline tabular-nums">
+                          {updateBusy
+                            ? (updateProgress != null && updateProgress < 100 ? `${updateProgress}%` : (t.updating || 'Updating'))
+                            : (nexusApiKey ? (t.updateMod || 'Update') : (t.viewOnNexus || 'Nexus'))}
+                        </span>
                       </button>
-
-                      <span className={`hidden sm:flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors duration-300 ${mod.enabled ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'}`}>
-                        {mod.enabled ? <CheckCircle className="w-3 h-3" /> : <Power className="w-3 h-3" />}
-                        {mod.enabled ? t.running : t.disabled}
-                      </span>
-
+                    )}
+                    {hasConfig && onOpenConfig && (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const knob = e.currentTarget.querySelector('.toggle-knob');
-                          if (knob) { knob.classList.remove('toggle-bounce'); void knob.offsetWidth; knob.classList.add('toggle-bounce'); }
-                          onToggle(mod.filename);
-                        }}
-                        className={`relative inline-flex h-4 w-8 items-center rounded-full transition-all duration-300 focus:outline-none shadow-inner border border-black/5 dark:border-white/5 active:scale-90 ${!mod.enabled ? 'bg-slate-300 dark:bg-slate-700 hover:bg-slate-400 dark:hover:bg-slate-600' : ''}`}
-                        style={mod.enabled ? { backgroundColor: 'var(--accent-500)' } : undefined}
+                        onClick={(e) => { e.stopPropagation(); onOpenConfig(mod); }}
+                        className="p-1.5 rounded-full text-slate-400 hover:text-[var(--accent-500)] hover:bg-[rgba(var(--accent-rgb),0.12)] transition-all duration-300 hover:scale-110 active:scale-95"
+                        title={t.configEditBtn}
+                        aria-label={t.configEditBtn}
                       >
-                        <span className={`toggle-knob inline-block h-3 w-3 transform rounded-full bg-white transition duration-300 ease-in-out shadow-[0_2px_4px_rgba(0,0,0,0.2)] ${mod.enabled ? 'translate-x-4' : 'translate-x-1'}`} />
+                        <Sliders className="w-3.5 h-3.5" />
                       </button>
-                    </div>
+                    )}
+                    {(() => {
+                      // linked/rollback lookups key on the enabled-form name
+                      const bareName = mod.filename.replace(/\.disabled$/i, '');
+                      const rollbackInfo = rollbackMap?.get(bareName);
+                      const unlinked = nexusLinkedSet && !nexusLinkedSet.has(bareName);
+                      return (
+                        <>
+                          {rollbackInfo && onRollbackMod && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onRollbackMod(mod); }}
+                              className="p-1.5 rounded-full text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/20 transition-all duration-300 hover:scale-110 active:scale-95"
+                              title={`${t.rollback || 'Roll back'}${rollbackInfo.version ? ` → v${rollbackInfo.version}` : ''}`}
+                            >
+                              <History className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {unlinked && onLinkMod && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onLinkMod(mod); }}
+                              className="p-1.5 rounded-full text-slate-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-500/20 transition-all duration-300 hover:scale-110 active:scale-95"
+                              title={t.linkNexus || 'Link to Nexus'}
+                            >
+                              <Link2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onUninstallLocal(mod.filename); }}
+                      className="p-1.5 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/20 transition-all duration-300 hover:scale-110 active:scale-95"
+                      title={t.uninstall}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                    <Toggle size="sm" checked={!!mod.enabled} onChange={() => onToggle(mod.filename)} label={displayName} className="ml-1.5" />
                   </div>
                 </GlassCard>
               </div>

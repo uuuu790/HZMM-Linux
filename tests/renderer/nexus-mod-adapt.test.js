@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { adaptV2Mod } from '../../src/renderer/src/utils/nexus-mod-adapt.js'
+import { adaptV2Mod } from '../../src/renderer/src/utils/nexus-mod-adapt'
 
 describe('adaptV2Mod', () => {
   it('prefers full-resolution pictureUrl over thumbnails', () => {

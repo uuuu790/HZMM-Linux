@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ALLOWED_SETTINGS_KEYS } from '../../src/main/ipc/settings.js'
+import { ALLOWED_SETTINGS_KEYS } from '../../src/main/ipc/settings'
 
 // The whitelist is the only line of defense between the renderer and the
 // settings file. A drift here means either:
@@ -17,8 +17,10 @@ describe('ALLOWED_SETTINGS_KEYS', () => {
 
   // The keys actually written by the renderer (App.jsx + Settings tab + hooks).
   // Adding a new persisted setting in renderer must add it here too.
+  // gamePath is deliberately NOT whitelisted — it is the trust anchor for every
+  // filesystem path and must go through the validating game:set-path handler,
+  // never the generic settings:set.
   const REQUIRED_KEYS = [
-    'gamePath',
     'themeId', 'darkMode',
     'minimizeToTray',
     'nexusApiKey',
@@ -35,6 +37,7 @@ describe('ALLOWED_SETTINGS_KEYS', () => {
   })
 
   it('rejects keys never written by the app', () => {
+    expect(ALLOWED_SETTINGS_KEYS.has('gamePath')).toBe(false) // must go through game:set-path
     expect(ALLOWED_SETTINGS_KEYS.has('language')).toBe(false) // moved to locale:set-preference
     expect(ALLOWED_SETTINGS_KEYS.has('theme')).toBe(false) // superseded by themeId
     expect(ALLOWED_SETTINGS_KEYS.has('autoCheckUpdate')).toBe(false) // removed: unread

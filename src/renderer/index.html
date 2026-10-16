@@ -3,7 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;" />
+    <!--
+      Production CSP. script-src is 'self' ONLY — no 'unsafe-inline'/'unsafe-eval'.
+      The built renderer has zero inline scripts (its single entry is an external
+      same-origin module), so untrusted mod content (README / Nexus / Steam
+      descriptions rendered via dangerouslySetInnerHTML) can no longer reach a
+      script execution sink even if it slipped past DOMPurify — DOMPurify is now
+      backed by the CSP rather than being the sole XSS barrier.
+      style-src keeps 'unsafe-inline' (React inline styles, Tailwind, the splash
+      <style>). The Vite dev server injects inline HMR/Fast-Refresh scripts and
+      uses eval, so electron.vite.config.mjs relaxes this meta to a permissive
+      policy while serving (dev only, never in the shipped build).
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; frame-src 'none'" />
     <title>HZMM Manager</title>
     <style>
       #splash-screen {

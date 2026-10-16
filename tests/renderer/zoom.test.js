@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampZoom, stepZoom, ZOOM_MIN, ZOOM_MAX } from '../../src/renderer/src/utils/zoom.js'
+import { clampZoom, stepZoom, ZOOM_MIN, ZOOM_MAX } from '../../src/renderer/src/utils/zoom'
 
 describe('clampZoom', () => {
   it('clamps below/above the range', () => {

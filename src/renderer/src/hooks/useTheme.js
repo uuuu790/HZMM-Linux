@@ -45,7 +45,13 @@ export function useTheme({ persistSetting }) {
         persistSetting('themeId', id);
       });
       activeTransitionRef.current = transition;
-      transition.finished.then(() => { activeTransitionRef.current = null; });
+      // Only clear the ref if it STILL points at this transition. On rapid
+      // theme switches a newer transition may have already replaced it; nulling
+      // unconditionally would clear the newer one, so the skip-guard above then
+      // sees null and fails to cancel it → two transitions animate at once.
+      transition.finished.then(() => {
+        if (activeTransitionRef.current === transition) activeTransitionRef.current = null;
+      });
       transition.ready.then(() => {
         document.documentElement.animate([
           { clipPath: `circle(0px at ${x}px ${y}px)` },
@@ -55,7 +61,7 @@ export function useTheme({ persistSetting }) {
           { filter: 'brightness(1)', opacity: 1 },
           { filter: 'brightness(0.96)', opacity: 0.98 },
         ], { duration, easing, pseudoElement: '::view-transition-old(root)' });
-      });
+      }).catch(() => { /* ready rejects when the transition is skipped (rapid theme switch) — ignore */ });
     } else {
       setThemeId(id);
       persistSetting('themeId', id);

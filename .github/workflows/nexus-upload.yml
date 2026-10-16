@@ -64,8 +64,9 @@ jobs:
           filename: HZMM Manager Linux.zip
           version: ${{ steps.tag.outputs.version }}
           display_name: HZMM Manager for Linux ${{ steps.tag.outputs.tag }}
-          # Auto-fills the Nexus version description from the GitHub release
-          # notes (empty on manual runs — add notes on Nexus if you want).
-          description: ${{ github.event.release.body }}
+          # NO description: as of 2026-08 the v3 create-version endpoint
+          # returns HTTP 500 whenever a description is present (found while
+          # uploading Windows v1.6.0). No mod-page changelog either — the page
+          # is shared with the Windows build, whose version numbers it tracks.
           category: main
           archive_existing_version: true

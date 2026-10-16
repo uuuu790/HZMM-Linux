@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseNxmUrl, findNxmUrlInArgv, buildExecCommand, buildDesktopEntry } from '../../src/main/ipc/nxm.js'
+import { parseNxmUrl, findNxmUrlInArgv, buildExecCommand, buildDesktopEntry } from '../../src/main/ipc/nxm'
 
 // parseNxmUrl gates everything the nxm:// handler does with OS-supplied input,
 // so it must reject anything that is not exactly

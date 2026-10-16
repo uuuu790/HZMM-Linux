@@ -1,5 +1,6 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { Globe, ChevronDown, Minus, Square, X } from 'lucide-react';
+import LiquidGlass from '../common/LiquidGlass';
 
 // Linux has no titleBarOverlay support — the BrowserWindow runs with
 // frame: false but Electron can't synthesize OS-style close/min/max
@@ -15,6 +16,11 @@ export default function AppHeader({
   langDropdownOpen, setLangDropdownOpen, changeLang,
 }) {
   const langDropdownRef = useRef(null);
+  // The entry animation is dropped once it finishes. Left in place, its
+  // `forwards` fill keeps an opacity animation active on the header, which
+  // makes Chromium treat the header as a backdrop root: the glass menu below
+  // could then only see (and blur) the header itself, not the page behind.
+  const [entered, setEntered] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -42,7 +48,8 @@ export default function AppHeader({
 
   return (
     <header
-      className={`w-full flex justify-between items-center mb-8 z-30 relative animate-slide-down duration-700 select-none [-webkit-app-region:drag] ${isWide ? 'max-w-[1600px]' : 'max-w-6xl'}`}
+      onAnimationEnd={(e) => { if (e.target === e.currentTarget) setEntered(true); }}
+      className={`w-full flex justify-between items-center mb-6 z-30 relative ${entered ? '' : 'animate-slide-down'} duration-700 select-none [-webkit-app-region:drag] ${isWide ? 'max-w-[1600px]' : 'max-w-6xl'}`}
       // Matches <main>'s springy width transition so the top bar slides out in
       // sync with the content below when switching to/from the Nexus tab.
       style={{ transition: 'max-width 500ms cubic-bezier(0.34, 1.56, 0.64, 1)' }}
@@ -57,17 +64,23 @@ export default function AppHeader({
 
       <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
         <div className="relative" ref={langDropdownRef}>
-          <button
+          {/* Glass capsule, like a toolbar item floating over the window. */}
+          <LiquidGlass
+            as="button"
             onClick={() => setLangDropdownOpen(prev => !prev)}
-            className="group relative flex items-center gap-2 px-4 py-2 rounded-full text-slate-600 dark:text-slate-300 font-bold text-sm cursor-pointer transition-all duration-300 hover:scale-105 hover:shadow-md active:scale-95"
+            radius={20} edge={8} strength={14} blur={8}
+            className="group relative flex items-center gap-2 px-4 py-2 rounded-full text-slate-600 dark:text-slate-300 font-bold text-sm cursor-pointer transition-[scale] duration-300 hover:scale-105 active:scale-95"
           >
-            <div className="absolute inset-0 rounded-full bg-white/60 dark:bg-slate-800/60 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-sm group-hover:bg-[var(--accent-50)] group-hover:dark:bg-[rgba(var(--accent-rgb),0.2)] group-hover:border-[var(--accent-300)] group-hover:dark:border-[var(--accent-700)] transition-colors duration-300" />
-            <Globe className="relative w-4 h-4 animate-[spin_10s_linear_infinite]" style={{ color: 'var(--accent-500)' }} />
-            <span className="relative hidden sm:inline">{supportedLocales.find(l => l.code === lang)?.name || lang}</span>
-            <ChevronDown className={`relative w-3 h-3 transition-transform duration-300 ${langDropdownOpen ? 'rotate-180' : ''}`} />
-          </button>
+            <Globe className="w-4 h-4 transition-transform duration-500 group-hover:rotate-[30deg]" style={{ color: 'var(--accent-500)' }} />
+            <span className="hidden sm:inline">{supportedLocales.find(l => l.code === lang)?.name || lang}</span>
+            <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${langDropdownOpen ? 'rotate-180' : ''}`} />
+          </LiquidGlass>
           {langDropdownOpen && (
-            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 min-w-[140px] py-1.5 bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl shadow-[0_12px_48px_-4px_rgba(0,0,0,0.12),0_4px_16px_-2px_rgba(0,0,0,0.06)] dark:shadow-[0_12px_48px_-4px_rgba(0,0,0,0.6),0_4px_16px_-2px_rgba(0,0,0,0.3)] z-50 animate-zoom-in">
+            // Floating glass menu: the cards underneath bend along its rim.
+            <LiquidGlass
+              radius={22} edge={16} strength={30} blur={10}
+              className="lg-menu absolute left-1/2 -translate-x-1/2 top-full mt-2 min-w-[140px] py-1.5 rounded-[22px] z-50 animate-zoom-in"
+            >
               {supportedLocales.map((locale, i) => (
                 <button
                   key={locale.code}
@@ -76,7 +89,7 @@ export default function AppHeader({
                   className={`w-full text-left px-4 py-2 text-sm cursor-pointer flex items-center gap-3 opacity-0 animate-[langItemIn_0.3s_ease_forwards] transition-colors duration-150
                     ${locale.code === lang
                       ? 'font-bold'
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40'}`}
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-white/50 dark:hover:bg-white/[0.06]'}`}
                 >
                   {locale.code === lang && (
                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--accent-500)' }} />
@@ -84,7 +97,7 @@ export default function AppHeader({
                   <span className={locale.code === lang ? '' : 'ml-[18px]'}>{locale.name}</span>
                 </button>
               ))}
-            </div>
+            </LiquidGlass>
           )}
         </div>
 

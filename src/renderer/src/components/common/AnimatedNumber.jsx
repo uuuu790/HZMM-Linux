@@ -2,12 +2,16 @@ import { useState, useEffect, useRef } from 'react';
 
 const AnimatedNumber = ({ value, className = '' }) => {
   const [display, setDisplay] = useState(0);
-  const prevValue = useRef(0);
+  const displayRef = useRef(0); // live displayed value, updated every frame
+  const prevValue = useRef(0);  // last target — drives the count-pop class
 
   useEffect(() => {
-    const start = prevValue.current;
+    // Start from the value currently on screen, not the previous target. If
+    // `value` changes mid-animation, this keeps the number counting smoothly
+    // from where it is instead of snapping back to the stale previous target.
+    const start = displayRef.current;
     const end = value;
-    if (start === end) return;
+    if (start === end) { prevValue.current = end; return; }
     const duration = 600;
     const startTime = performance.now();
     let cancelled = false;
@@ -16,7 +20,9 @@ const AnimatedNumber = ({ value, className = '' }) => {
       if (cancelled) return;
       const progress = Math.min((now - startTime) / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
-      setDisplay(Math.round(start + (end - start) * eased));
+      const next = Math.round(start + (end - start) * eased);
+      displayRef.current = next;
+      setDisplay(next);
       if (progress < 1) rafId = requestAnimationFrame(step);
     };
     rafId = requestAnimationFrame(step);

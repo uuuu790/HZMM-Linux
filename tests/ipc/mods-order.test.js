@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import {
   stripOrderPrefix,
+  isPakFormOfMod,
   comparePakNames,
   pickWinningName,
   buildOrderTargets,
@@ -12,7 +13,7 @@ import {
   migrateReceipts,
   migrateCustomNames,
   migrateHybridLinks,
-} from '../../src/main/ipc/mods-order.js'
+} from '../../src/main/ipc/mods-order'
 
 describe('stripOrderPrefix', () => {
   it('strips z<N>_ prefixes of any escalation level', () => {
@@ -31,6 +32,70 @@ describe('stripOrderPrefix', () => {
     expect(stripOrderPrefix('010_Foo_P.pak')).toBe('Foo_P.pak')
     expect(stripOrderPrefix('10_Foo.pak')).toBe('10_Foo.pak')
     expect(stripOrderPrefix('0100_Foo.pak')).toBe('0100_Foo.pak')
+  })
+})
+
+describe('isPakFormOfMod', () => {
+  it('matches every plain on-disk form of the mod name', () => {
+    expect(isPakFormOfMod('Cool_P.pak', 'Cool')).toBe(true)
+    expect(isPakFormOfMod('Cool.pak', 'Cool')).toBe(true)
+    expect(isPakFormOfMod('Cool_P.pak.disabled', 'Cool')).toBe(true)
+    expect(isPakFormOfMod('cool_p.pak', 'Cool')).toBe(true) // Windows fs is case-insensitive
+  })
+
+  it('matches load-order-prefixed forms (the update rotation regression)', () => {
+    // Regression: the old fixed candidate list missed z1_Cool_P.pak, so an
+    // update left the old prefixed pak behind — and it kept winning the
+    // alphabetical mount order over the new version.
+    expect(isPakFormOfMod('z1_Cool_P.pak', 'Cool')).toBe(true)
+    expect(isPakFormOfMod('zz12_Cool.pak', 'Cool')).toBe(true)
+    expect(isPakFormOfMod('010_Cool_P.pak.disabled', 'Cool')).toBe(true)
+  })
+
+  it('matches mods whose name RETAINS a lowercase _p suffix — without swallowing the stripped name', () => {
+    // Name derivation strips only an uppercase _P, so a pak shipped as
+    // cool_p.pak yields mod.name 'cool_p' — its own files must still match
+    // (the old candidate list handled these via case-insensitive existsSync),
+    // but mod 'Sharp_p' must NOT match the unrelated mod Sharp's pak.
+    expect(isPakFormOfMod('cool_p.pak', 'cool_p')).toBe(true)
+    expect(isPakFormOfMod('cool_p.pak.disabled', 'cool_p')).toBe(true)
+    expect(isPakFormOfMod('z1_cool_p.pak', 'cool_p')).toBe(true)
+    expect(isPakFormOfMod('Sharp.pak', 'Sharp_p')).toBe(false)
+  })
+
+  it('matches a double _P name exactly, like the old candidate list', () => {
+    // Cool_P_P.pak derives mod.name 'Cool_P' (one _P stripped); the candidate
+    // set contains name + '_P.pak' so the raw file still matches.
+    expect(isPakFormOfMod('Cool_P_P.pak', 'Cool_P')).toBe(true)
+    expect(isPakFormOfMod('z1_Cool_P_P.pak', 'Cool_P')).toBe(true)
+  })
+
+  it('matches the pak’s IoStore siblings (.ucas/.utoc)', () => {
+    // ucas/utoc land in the paks dir with the pak and must rotate with it —
+    // otherwise an update collides and writes "X (2).ucas", breaking the mod.
+    expect(isPakFormOfMod('Cool.ucas', 'Cool')).toBe(true)
+    expect(isPakFormOfMod('Cool.utoc', 'Cool')).toBe(true)
+    expect(isPakFormOfMod('z1_Cool_P.ucas', 'Cool')).toBe(true)
+    expect(isPakFormOfMod('Cooler.ucas', 'Cool')).toBe(false)
+  })
+
+  it('accepts its own prefix-named forms but never swallows the unprefixed mod', () => {
+    // A mod legitimately NAMED z1_Cool / 010_Map matches its own files
+    // exactly, but must NOT match the unrelated mod Cool / Map — rotation
+    // would move that mod's pak into a backup that gets deleted on success.
+    expect(isPakFormOfMod('z1_Cool_P.pak', 'z1_Cool')).toBe(true)
+    expect(isPakFormOfMod('010_map.pak', '010_Map')).toBe(true)
+    expect(isPakFormOfMod('Cool_P.pak', 'z1_Cool')).toBe(false)
+    expect(isPakFormOfMod('Map_P.pak', '010_Map')).toBe(false)
+  })
+
+  it('rejects other mods and non-pak-family files', () => {
+    expect(isPakFormOfMod('Cooler_P.pak', 'Cool')).toBe(false)
+    expect(isPakFormOfMod('z1_Cooler_P.pak', 'Cool')).toBe(false)
+    expect(isPakFormOfMod('Cool.txt', 'Cool')).toBe(false)
+    expect(isPakFormOfMod('Cool_P.pak (2)', 'Cool')).toBe(false)
+    expect(isPakFormOfMod('', 'Cool')).toBe(false)
+    expect(isPakFormOfMod('Cool_P.pak', '')).toBe(false)
   })
 })
 

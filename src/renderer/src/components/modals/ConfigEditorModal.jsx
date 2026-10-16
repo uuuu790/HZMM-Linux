@@ -2,27 +2,97 @@ import { useState, useEffect, useMemo } from 'react';
 import { X, FileText, Save, RotateCcw, Sliders, RefreshCw, Search } from 'lucide-react';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { cleanModName } from '../../constants/modIcons';
-import { parseConfigFile, serializeConfig, appendKeyval, removeKeyval, valueNeedsQuote, serializeLuaArray, isUserConfigFile } from '../../utils/config-parser';
+import {
+  parseConfigFile, serializeConfig, appendKeyval, removeKeyvalAt, keyDefNeedsQuote, isUserConfigFile,
+  syntaxForFile, normalizeSchema, buildEntryKeyDefMap, guessValueType, isKnownType,
+} from '../../utils/config-parser';
 import { buildKeyMatcher, countSchemaMatches } from '../../utils/config-search';
+import { prepareEntriesForSave, resetEntriesToDefaults, entriesAtDefaults, normalizeKeybindEntries } from '../../utils/widget-helpers';
+import { TOAST_LONG_DURATION_MS } from '../../hooks/useToast';
 import SchemaRenderer from './config-editor/SchemaRenderer';
 import CommentModeRenderer from './config-editor/CommentModeRenderer';
+import { DEFAULT_READONLY_TEXT } from './config-editor/SchemaRow';
+import { DEFAULT_KEYBIND_TEXT } from './config-editor/KeybindInput';
+import { DEFAULT_MULTI_SELECT_TEXT } from './config-editor/MultiSelectInput';
 
 // Config editor modal — orchestrates schema-driven vs comment-driven rendering.
 // Parsing / serialization lives in utils/config-parser; the two render modes
 // live in ./config-editor/SchemaRenderer and ./config-editor/CommentModeRenderer.
 // This file is just the state machine, data loading, and modal chrome.
+// Save normalization and the footer reset live in utils/widget-helpers and
+// bind entries to schema keys with buildEntryKeyDefMap — the same
+// resolveEntryIdx binding SchemaRenderer uses for its rows.
 
-// Serialize a schema-declared `default` into the same string form we store
-// in `entries[].value`. Used by both the reset handler and the
-// "is everything at default already?" check, so the comparison stays
-// consistent with what reset would actually write.
-function defaultToValueStr(keyDef) {
-  if (!keyDef || keyDef.default === undefined || keyDef.default === null) return null;
-  if (Array.isArray(keyDef.default)) return serializeLuaArray(keyDef.default);
-  if (keyDef.type === 'float' && typeof keyDef.default === 'number' && Number.isInteger(keyDef.default)) {
-    return keyDef.default.toFixed(1);
+// Parse one config file into entries tagged with their file (handleSave
+// groups by `_file`). *.lua parses as Lua, *.ini / *.cfg as INI, the rest is
+// sniffed.
+const parseFileEntries = (text, file) =>
+  parseConfigFile(text, { syntax: syntaxForFile(file.relativePath) }).map(e => ({ ...e, _file: file }));
+
+// Re-parse a file just saved from `fileEntries`. A sniffed file keeps the
+// syntax it was loaded as (its keyvals' `format`), still with the hybrid
+// (non-strict) Lua rules — an edited value (`{Clan} Bob`, a trailing `,` in an
+// INI value) must not flip the re-parse to the other syntax.
+const reparseSavedFile = (text, file, fileEntries) => {
+  const format = syntaxForFile(file.relativePath) === 'auto' && fileEntries.find(e => e.type === 'keyval')?.format;
+  if (!format) return parseFileEntries(text, file);
+  return parseConfigFile(text, { syntax: format, strict: false }).map(e => ({ ...e, _file: file }));
+};
+
+// Schema mode: entries as the editor starts from them — pre-1.4 keybind
+// values already converted (see normalizeKeybindEntries). Snapshot this as
+// "original" too, so opening the editor alone doesn't enable Save.
+const withSchemaFixups = (entries, schema) => normalizeKeybindEntries(entries, buildEntryKeyDefMap(entries, schema));
+
+// ipcRenderer.invoke wraps a main-process throw as
+// "Error invoking remote method 'x': Error: <message>" — keep the message.
+const ipcErrorMessage = (err) =>
+  String(err?.message || err || '').replace(/^Error invoking remote method '[^']*':\s*(?:\w*Error:\s*)?/, '');
+
+// The main process refuses to write a config.lua that no longer parses
+// (services/lua-syntax.ts): "Lua syntax error in <path>: [line:col] <msg>".
+// A parse failure without a position (e.g. nesting too deep) has no [l:c].
+const LUA_SYNTAX_ERROR_RE = /^Lua syntax error in (.+?): (?:\[(\d+):\d+\]\s*)?([\s\S]*)$/;
+
+// Toast tags: a new toast of the same kind replaces the one still showing,
+// so a save that succeeds on retry clears the previous attempt's error.
+const SAVE_TOAST_TAG = 'config-editor-save';
+const OPTIONAL_TOAST_TAG = 'config-editor-optional';
+
+const fill = (template, values) =>
+  Object.entries(values).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), template);
+
+/**
+ * One file that failed to save → `{ title, detail }` for the error toast. A
+ * Lua syntax refusal is localized and names the line; the parser's own
+ * (English) message becomes the detail. Any other failure keeps the generic
+ * "failed to save" title with the raw reason as the detail.
+ */
+export function describeSaveFailure(fileName, reason, t = {}) {
+  const m = LUA_SYNTAX_ERROR_RE.exec(String(reason || ''));
+  if (m) {
+    const [, , line, message] = m;
+    const template = line
+      ? t.toastConfigSyntaxErrorLine || 'Syntax error on line {line} of {file} — not saved'
+      : t.toastConfigSyntaxError || 'Syntax error in {file} — not saved';
+    return { title: fill(template, { file: fileName, line: line ?? '' }), detail: message.trim() };
   }
-  return String(keyDef.default);
+  return { title: `${t.toastConfigError || 'Failed to save config'}: ${fileName}`, detail: String(reason || '').trim() };
+}
+
+// Error toast body: each failed file's title, its raw detail in small mono
+// type underneath (ToastContainer renders the message inside its text span).
+function SaveFailureMessage({ failures }) {
+  return failures.map((f, i) => (
+    <span key={i} className={`block ${i > 0 ? 'mt-2' : ''}`}>
+      <span className="block text-balance">{f.title}</span>
+      {f.detail && (
+        <span className="block mt-1 font-mono text-[11px] font-medium leading-snug text-slate-500 dark:text-slate-400 break-words">
+          {f.detail}
+        </span>
+      )}
+    </span>
+  ));
 }
 
 const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
@@ -44,6 +114,25 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
     [schema, matcher, lang]
   );
   const searchActive = !!searchQuery.trim();
+
+  // Read-only row strings (pill, its tooltip, the one note at the top), plus
+  // the keybind and multi-select widgets' strings — the renderers hand this
+  // bundle to every row unchanged.
+  const readonlyText = useMemo(() => ({
+    badge: t.configReadonlyBadge || DEFAULT_READONLY_TEXT.badge,
+    hint: t.configReadonlyHint || DEFAULT_READONLY_TEXT.hint,
+    noteTitle: t.configReadonlyNoteTitle || DEFAULT_READONLY_TEXT.noteTitle,
+    note: t.configReadonlyNote || DEFAULT_READONLY_TEXT.note,
+    keybind: {
+      recording: t.configKeybindRecording || DEFAULT_KEYBIND_TEXT.recording,
+      empty: t.configKeybindEmpty || DEFAULT_KEYBIND_TEXT.empty,
+      clear: t.configKeybindClear || DEFAULT_KEYBIND_TEXT.clear,
+    },
+    multiSelect: {
+      none: t.configMultiSelectNone || DEFAULT_MULTI_SELECT_TEXT.none,
+      count: t.configMultiSelectCount || DEFAULT_MULTI_SELECT_TEXT.count,
+    },
+  }), [t]);
 
   // Reset search whenever the modal opens for a different mod — stale queries
   // from a previous mod's schema are confusing.
@@ -71,20 +160,32 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
 
         if (loadedSchema?.configFile && loadedSchema?.sections) {
           // Schema mode: read only the target config file
+          let text = null;
           try {
-            const text = await window.api.mods.readConfig(mod.filename, loadedSchema.configFile);
-            if (cancelled) return;
-            const parsed = parseConfigFile(text);
-            const file = { name: loadedSchema.configFile, relativePath: loadedSchema.configFile };
-            parsed.forEach(e => { e._file = file; });
-            setSchema(loadedSchema);
-            setConfigFiles([file]);
-            setSelectedFile(file);
-            setEntries(parsed);
-            setOriginalEntries(JSON.parse(JSON.stringify(parsed)));
+            text = await window.api.mods.readConfig(mod.filename, loadedSchema.configFile);
           } catch {
             // Config file not found — fall through to comment mode
             loadedSchema = null;
+          }
+          if (cancelled) return;
+          if (loadedSchema) {
+            try {
+              const file = { name: loadedSchema.configFile, relativePath: loadedSchema.configFile };
+              // Tolerate schema slips (section without keys, null key, plain
+              // option values) instead of crashing the renderer.
+              const normalized = normalizeSchema(loadedSchema);
+              const parsed = withSchemaFixups(parseFileEntries(text, file), normalized);
+              setSchema(normalized);
+              setConfigFiles([file]);
+              setSelectedFile(file);
+              setEntries(parsed);
+              setOriginalEntries(JSON.parse(JSON.stringify(parsed)));
+            } catch (err) {
+              // The file was read, but parsing it / binding it to the schema
+              // threw — not a missing file: log it, then still offer comment mode.
+              console.error('Config schema binding failed:', err);
+              loadedSchema = null;
+            }
           }
         }
 
@@ -100,11 +201,10 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
             try {
               const text = await window.api.mods.readConfig(mod.filename, file.relativePath);
               if (cancelled) return;
-              const parsed = parseConfigFile(text);
+              const parsed = parseFileEntries(text, file);
               const hasKeyval = parsed.some(e => e.type === 'keyval');
               if (hasKeyval) {
                 validFiles.push(file);
-                parsed.forEach(e => { e._file = file; });
                 allEntries.push(...parsed);
               }
             } catch { /* skip */ }
@@ -125,133 +225,131 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
     return () => { cancelled = true; };
   }, [isOpen, mod]);
 
+  // Readonly entries (multi-line values, two assignments on one line,
+  // functions) are never edited — the widgets are disabled, this is the
+  // backstop.
   const updateValue = (idx, newValue) => {
-    setEntries(prev => prev.map((e, i) => i === idx ? { ...e, value: newValue } : e));
+    setEntries(prev => prev.map((e, i) => (i === idx && !e.readonly ? { ...e, value: newValue } : e)));
   };
 
   // Schema 1.2 optional widget — toggle on adds the key to entries (so it
   // serializes back into config.lua), toggle off removes it entirely so
   // the mod's `if Config.X ~= nil` check treats it as disabled.
   //
-  // The new entry must inherit `_file` from existing entries; handleSave
-  // groups entries by `e._file?.relativePath` and silently drops anything
-  // without it. Without this tag the toggle-on appeared to work in the UI
-  // but nothing was written to config.lua on save.
-  const addOptionalEntry = (keyName, value, type, sectionHint = null) => {
-    const isQuoted = valueNeedsQuote(type);
-    setEntries(prev => {
-      const fileRef = prev.find(e => e._file)?._file ?? null;
-      const updated = appendKeyval(prev, keyName, value, { isQuoted, format: 'lua', sectionHint });
-      if (fileRef) {
-        const newEntry = updated.find(e => e.type === 'keyval' && e.key === keyName && !e._file);
-        if (newEntry) newEntry._file = fileRef;
-      }
-      return updated;
-    });
+  // Every entry appendKeyval adds must inherit `_file` from existing entries
+  // (the new keyval, and the `{` / `}` lines of an expanded one-line
+  // `local Config = {}`); handleSave groups entries by `e._file?.relativePath`
+  // and silently drops anything without it.
+  //
+  // appendKeyval returns the SAME array when it finds no safe place for the
+  // line (e.g. a one-line `local Config = { A = 1 }`). That refusal gets an
+  // error toast instead of a toggle that silently stays off — computed from
+  // the rendered entries, not inside a setEntries updater, which React may
+  // run lazily (or twice) and would toast more than once.
+  const fileRefOf = () => entries.find(e => e._file)?._file ?? configFiles[0] ?? null;
+  const toastOptionalRefused = (template, keyName, fileRef) => {
+    const file = fileRef?.name || fileRef?.relativePath || 'config.lua';
+    const message = fill(template, { key: keyName, file });
+    addToast(<span className="block text-balance">{message}</span>, 'error', { duration: TOAST_LONG_DURATION_MS, tag: OPTIONAL_TOAST_TAG });
   };
-  const removeOptionalEntry = (keyName, sectionHint = null) => {
-    setEntries(prev => removeKeyval(prev, keyName, sectionHint));
+  // sectionId (the schema section id) lets appendKeyval's self-check confirm
+  // the new line binds back to this very row.
+  const addOptionalEntry = (keyName, value, type, sectionHint = null, keyDef = null, sectionId = null) => {
+    const fileRef = fileRefOf();
+    const format = fileRef ? syntaxForFile(fileRef.relativePath) : 'lua';
+    // Lua: quoting follows the schema type. An unknown / missing one follows
+    // the type the row edits the key as (`type`, from inferKeyType — its
+    // default decides: a "0042" default stays text, an array default is a
+    // list), so the line is written the way prepareEntriesForSave and the
+    // reopened row read it; with `options` it quotes like a select. INI values
+    // are never quoted — INI readers take the rest of the line literally.
+    // A sniffed ('auto') file reports its syntax on its parsed keyvals.
+    const isIni = (entries.find(e => e.type === 'keyval')?.format ?? format) === 'ini';
+    const quoteDef = isKnownType(keyDef?.type)
+      ? keyDef
+      : { ...keyDef, type: keyDef?.options && type === 'string' ? 'select' : type };
+    const isQuoted = !isIni && keyDefNeedsQuote(quoteDef, guessValueType(String(value)) === 'string');
+    const updated = appendKeyval(entries, keyName, value, { isQuoted, format, sectionHint, sectionId });
+    if (updated === entries) {
+      toastOptionalRefused(t.toastConfigOptionalRefused || '“{key}” can’t be added automatically — edit {file} by hand.', keyName, fileRef);
+      return;
+    }
+    setEntries(fileRef ? updated.map(e => (e._file ? e : { ...e, _file: fileRef })) : updated);
   };
+  // removeKeyvalAt follows the same refusal contract (same array back) when
+  // a line of the key is readonly, or removing it would change how the file
+  // is read — the toggle then stays on and the user is told why.
+  const removeOptionalEntry = (entryIdx) => {
+    const updated = removeKeyvalAt(entries, entryIdx);
+    if (updated === entries) {
+      toastOptionalRefused(
+        t.toastConfigOptionalRemoveRefused || '“{key}” can’t be removed automatically — edit {file} by hand.',
+        entries[entryIdx]?.key ?? '', fileRefOf(),
+      );
+      return;
+    }
+    setEntries(updated);
+  };
+
+  // entryIdx → { sectionId, keyName, keyDef }, built with the SAME
+  // resolveEntryIdx binding SchemaRenderer uses for its rows — so save-time
+  // clamping, the footer reset and the "all at defaults" check only ever
+  // touch the lines the rows show (never a nested or unrelated same-named
+  // key). Comment mode has no schema → null.
+  const keyDefMap = useMemo(() => (schema ? buildEntryKeyDefMap(entries, schema) : null), [schema, entries]);
 
   const handleSave = async () => {
     if (!mod || configFiles.length === 0) return;
 
     setSaving(true);
-    // Clamp numeric entries against schema min/max BEFORE persisting.
-    // SliderInput / plain numeric inputs only clamp on blur, so a user
-    // who types out-of-range and immediately clicks Save (mousedown
-    // before input blur) would otherwise persist an unbounded value.
-    const normalizedEntries = entries.map((e, i) => {
-      if (e.type !== 'keyval') return e;
-      const def = keyDefByEntry?.[i];
-      if (!def || (def.min === undefined && def.max === undefined)) return e;
-      const isInt = def.type === 'int';
-      const isFloat = def.type === 'float';
-      if (!isInt && !isFloat) return e;
-      let n = isInt ? parseInt(e.value, 10) : parseFloat(e.value);
-      if (isNaN(n)) return e;
-      if (def.min !== undefined) n = Math.max(def.min, n);
-      if (def.max !== undefined) n = Math.min(def.max, n);
-      const newStr = isInt ? String(Math.round(n)) : String(parseFloat(n.toFixed(4)));
-      return newStr === e.value ? e : { ...e, value: newStr };
-    });
+    // Validate / clamp / quote edited values BEFORE persisting: an invalid
+    // number reverts, an out-of-range one is clamped (inputs only clamp on
+    // blur, and Save's mousedown can beat the blur), text is quoted by type.
+    const normalizedEntries = prepareEntriesForSave(entries, keyDefMap);
     // 按檔案分組儲存 — save each file independently so one failure doesn't
-    // abort the rest, and report exactly which files failed.
-    const failed = [];
+    // abort the rest, and report exactly which files failed and why.
+    const failures = [];
+    const saved = {};
     for (const file of configFiles) {
       const fileEntries = normalizedEntries.filter(e => e._file?.relativePath === file.relativePath);
       const text = serializeConfig(fileEntries);
       try {
         await window.api.mods.saveConfig(mod.filename, file.relativePath, text);
-      } catch {
-        failed.push(file.name || file.relativePath);
+        saved[file.relativePath] = { text, fileEntries };
+      } catch (err) {
+        failures.push(describeSaveFailure(file.name || file.relativePath, ipcErrorMessage(err), t));
       }
     }
-    if (failed.length === 0) {
-      setEntries(normalizedEntries);
-      setOriginalEntries(JSON.parse(JSON.stringify(normalizedEntries)));
-      addToast(t.toastConfigSaved, 'success');
+    if (failures.length === 0) {
+      // Re-parse what was written so `raw` / `origValue` describe the file on
+      // disk again (inserted lines, added commas, rebuilt values).
+      const reparsed = configFiles.flatMap(file => {
+        const { text, fileEntries } = saved[file.relativePath];
+        return reparseSavedFile(text, file, fileEntries);
+      });
+      const fresh = schema ? withSchemaFixups(reparsed, schema) : reparsed;
+      setEntries(fresh);
+      setOriginalEntries(JSON.parse(JSON.stringify(fresh)));
+      addToast(t.toastConfigSaved, 'success', { tag: SAVE_TOAST_TAG });
     } else {
       // Some/all files failed. Keep the dirty state so Save stays enabled for a
       // retry (re-writing the succeeded files is idempotent), and name the
       // failures instead of a generic error that hides what's half-saved.
-      addToast(`${t.toastConfigError}: ${failed.join(', ')}`, 'error');
+      // Long-lived: the reason (e.g. which line broke) takes a while to read.
+      addToast(<SaveFailureMessage failures={failures} />, 'error', { duration: TOAST_LONG_DURATION_MS, tag: SAVE_TOAST_TAG });
     }
     setSaving(false);
   };
 
-  // entryIdx → keyDef. Walk entries linearly, tracking the current INI/Lua
-  // section marker so each keyval pairs with its containing section's keyDef.
-  // Flat keyName→keyDef collapses cross-section duplicates (e.g. `enabled`
-  // repeated under [DamageNumbers] / [IncomingDamage] / ...) and resets every
-  // row to the same `default`. Sectionless configs (config.lua without
-  // section markers) fall back to the first matching key across sections.
-  const keyDefByEntry = useMemo(() => {
-    if (!schema) return null;
-    const map = {};
-    let currentSection = '';
-    entries.forEach((e, i) => {
-      if (e.type === 'section') {
-        currentSection = e.name || '';
-      } else if (e.type === 'keyval') {
-        const exact = schema.sections?.[currentSection]?.keys?.[e.key];
-        if (exact) {
-          map[i] = exact;
-        } else {
-          for (const sec of Object.values(schema.sections || {})) {
-            if (sec.keys?.[e.key]) { map[i] = sec.keys[e.key]; break; }
-          }
-        }
-      }
-    });
-    return map;
-  }, [schema, entries]);
-
   const handleReset = () => {
-    // Schema mode:
-    //  - Key with schema `default`: reset value to that default.
-    //  - Optional key WITHOUT default: reset means absent → remove entry.
-    //  - Non-optional key without default: nothing to reset to, leave alone.
+    // Schema mode: see resetEntriesToDefaults (default → value, optional
+    // without default → removed, unbound / readonly entries untouched).
     // Comment mode has no schema → discard unsaved edits.
-    if (!keyDefByEntry) {
+    if (!keyDefMap) {
       setEntries(JSON.parse(JSON.stringify(originalEntries)));
       return;
     }
-    setEntries(prev => {
-      const out = [];
-      prev.forEach((entry, i) => {
-        if (entry.type !== 'keyval') { out.push(entry); return; }
-        const def = keyDefByEntry[i];
-        const defaultStr = defaultToValueStr(def);
-        if (defaultStr === null) {
-          if (def?.optional) return; // drop — revert to "absent"
-          out.push(entry);
-          return;
-        }
-        out.push({ ...entry, value: defaultStr });
-      });
-      return out;
-    });
+    setEntries(prev => resetEntriesToDefaults(prev, buildEntryKeyDefMap(prev, schema)));
   };
 
   // Memoize: both run on every render (incl. every keystroke), and a large mod
@@ -262,28 +360,19 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
     [entries, originalEntries]
   );
   const keyvalEntries = useMemo(() => entries.filter(e => e.type === 'keyval'), [entries]);
+  // The schema editor also renders for a file with no keyvals yet (e.g. an
+  // all-optional `local Config = {}`) as long as some key can be switched on;
+  // with nothing to show at all, the "no editable config" state is clearer.
+  const showSchema = !!schema && (keyvalEntries.length > 0 ||
+    Object.values(schema.sections).some(s => Object.values(s.keys).some(d => d.optional)));
 
   // Is every keyval already at its schema default? If so, reset would be a
   // no-op — disable the button. Comment mode has no schema, so fall back to
   // the legacy "no unsaved changes" disable rule.
-  const allAtDefaults = useMemo(() => {
-    if (!keyDefByEntry) return !hasChanges;
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      if (entry.type !== 'keyval') continue;
-      const def = keyDefByEntry[i];
-      const defaultStr = defaultToValueStr(def);
-      if (defaultStr === null) {
-        // Optional key currently present is by definition "not at default"
-        // (default = absent). Non-optional keys without a default don't
-        // participate in the reset.
-        if (def?.optional) return false;
-        continue;
-      }
-      if (entry.value !== defaultStr) return false;
-    }
-    return true;
-  }, [entries, keyDefByEntry, hasChanges]);
+  const allAtDefaults = useMemo(
+    () => (keyDefMap ? entriesAtDefaults(entries, keyDefMap) : !hasChanges),
+    [entries, keyDefMap, hasChanges]
+  );
 
   if (!isOpen) return null;
 
@@ -356,12 +445,7 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
               <FileText className="w-10 h-10 mb-1" />
               <p className="text-sm font-medium">{t.configNoFiles}</p>
             </div>
-          ) : keyvalEntries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-slate-400 dark:text-slate-500 gap-2">
-              <FileText className="w-10 h-10 mb-1" />
-              <p className="text-sm font-medium">{t.configNoFiles}</p>
-            </div>
-          ) : schema ? (
+          ) : showSchema ? (
             <SchemaRenderer
               schema={schema}
               entries={entries}
@@ -374,15 +458,20 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
               searchActive={searchActive}
               matcher={matcher}
               noMatchLabel={t.configSearchNoMatch || 'No settings match your search.'}
-              t={t}
+              readonlyText={readonlyText}
             />
+          ) : keyvalEntries.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-400 dark:text-slate-500 gap-2">
+              <FileText className="w-10 h-10 mb-1" />
+              <p className="text-sm font-medium">{t.configNoFiles}</p>
+            </div>
           ) : (
-            <CommentModeRenderer entries={entries} lang={lang} onUpdateValue={updateValue} />
+            <CommentModeRenderer entries={entries} lang={lang} onUpdateValue={updateValue} readonlyText={readonlyText} />
           )}
         </div>
 
         {/* Footer */}
-        {keyvalEntries.length > 0 && (
+        {(keyvalEntries.length > 0 || showSchema) && (
           <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-200/60 dark:border-slate-700/50">
             <button
               onClick={handleReset}

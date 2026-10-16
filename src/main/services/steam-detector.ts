@@ -1,0 +1,307 @@
+import { join, resolve, sep } from 'path'
+import fs from 'fs'
+import os from 'os'
+import { net } from 'electron'
+import configStore from './config-store'
+import type { GameVersionInfo } from '../ipc/types'
+
+const HUMANITZ_APP_ID = '1766060' // 遊戲本體 app id：appmanifest / 啟動 / news 同一個
+const HUMANITZ_FOLDER_NAME = 'HumanitZ'
+
+// undefined = not probed yet; null = probed, Steam not found.
+let cachedSteamPath: string | null | undefined = undefined
+
+// Linux Steam ships through several distinct install channels, each placing
+// the Steam data root in a different location. Order matters: we prefer
+// native installs (least quirks) before Flatpak / Snap sandboxed variants.
+function getSteamCandidatePaths(): string[] {
+  const home = os.homedir()
+  return [
+    // Native packages — Debian/Ubuntu .deb, Arch steam, Fedora rpm
+    // ~/.steam/steam is usually a symlink to ~/.local/share/Steam
+    join(home, '.local', 'share', 'Steam'),
+    join(home, '.steam', 'steam'),
+    join(home, '.steam', 'debian-installation'),
+    join(home, '.steam', 'root'),
+    // Flatpak — com.valvesoftware.Steam
+    join(home, '.var', 'app', 'com.valvesoftware.Steam', 'data', 'Steam'),
+    // Snap — canonical/steam
+    join(home, 'snap', 'steam', 'common', '.local', 'share', 'Steam'),
+    // Custom / non-standard
+    join(home, 'Steam')
+  ]
+}
+
+function getSteamPath(): string | null {
+  if (cachedSteamPath !== undefined) return cachedSteamPath
+
+  for (const p of getSteamCandidatePaths()) {
+    try {
+      // Verify it's a Steam install by checking for steamapps folder —
+      // bare ~/Steam directories without steamapps are common (logs, etc).
+      if (fs.existsSync(p) && fs.existsSync(join(p, 'steamapps'))) {
+        cachedSteamPath = p
+        return cachedSteamPath
+      }
+    } catch {
+      continue
+    }
+  }
+
+  cachedSteamPath = null
+  return null
+}
+
+function parseLibraryFolders(steamPath: string): string[] {
+  const vdfPath = join(steamPath, 'steamapps', 'libraryfolders.vdf')
+  if (!fs.existsSync(vdfPath)) return [steamPath]
+
+  // Unreadable/corrupt vdf must not throw: game:detect-path runs inside the
+  // renderer's startup init chain, and an exception there wedges the splash.
+  let content
+  try {
+    content = fs.readFileSync(vdfPath, 'utf-8')
+  } catch {
+    return [steamPath]
+  }
+  const paths = [steamPath]
+
+  // VDF library paths on Linux are forward-slash style and need no unescaping.
+  // The replace is harmless for Linux-only input and keeps the parser robust
+  // if a manifest was imported from a Windows install.
+  const pathMatches = content.matchAll(/"path"\s+"([^"]+)"/g)
+  for (const m of pathMatches) {
+    const p = m[1].replace(/\\\\/g, '\\')
+    if (!paths.includes(p)) paths.push(p)
+  }
+
+  return paths
+}
+
+function detectGamePath(): string | null {
+  const steamPath = getSteamPath()
+  if (!steamPath) return null
+
+  const libraryPaths = parseLibraryFolders(steamPath)
+
+  for (const libPath of libraryPaths) {
+    const gamePath = join(libPath, 'steamapps', 'common', HUMANITZ_FOLDER_NAME)
+    if (fs.existsSync(gamePath)) {
+      // Game files are still .exe — Proton runs them through Wine — so the
+      // verification heuristic is unchanged from the Windows manager.
+      try {
+        const hasExe = fs.readdirSync(gamePath).some(f => f.toLowerCase().endsWith('.exe'))
+        if (hasExe) return gamePath
+      } catch { continue }
+    }
+  }
+
+  return null
+}
+
+// Whether gamePath is the Steam-managed copy (under a Steam library's
+// steamapps/common). Only then is launching via steam:// correct — a
+// manually-set non-Steam copy isn't orchestrated by Steam. On Linux this
+// also gates Proton: a Steam-managed copy gets the user's Proton/launch
+// options; a non-Steam path has no Wine prefix to run through.
+function isSteamGame(gamePath: string | null | undefined): boolean {
+  const steamPath = getSteamPath()
+  if (!steamPath || !gamePath) return false
+  const norm = resolve(gamePath).toLowerCase()
+  for (const lib of parseLibraryFolders(steamPath)) {
+    const common = resolve(join(lib, 'steamapps', 'common')).toLowerCase()
+    if (norm === common || norm.startsWith(common + sep)) return true
+  }
+  return false
+}
+
+function getPaksPath(gamePath: string): string | null {
+  // UE4 mod loader path is identical under Proton — Wine maps the Windows
+  // path layout 1:1 onto the Linux filesystem inside the game directory.
+  const candidates = [
+    join(gamePath, 'HumanitZ', 'Content', 'Paks', '~mods'),
+    join(gamePath, 'HumanitZ', 'Content', 'Paks'),
+    join(gamePath, 'Content', 'Paks', '~mods'),
+    join(gamePath, 'Content', 'Paks')
+  ]
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p
+  }
+
+  const defaultPaks = join(gamePath, 'HumanitZ', 'Content', 'Paks')
+  if (fs.existsSync(gamePath)) {
+    fs.mkdirSync(defaultPaks, { recursive: true })
+    return defaultPaks
+  }
+
+  return null
+}
+
+function getAllPaksPaths(gamePath: string): string[] {
+  const candidates = [
+    join(gamePath, 'HumanitZ', 'Content', 'Paks', '~mods'),
+    join(gamePath, 'HumanitZ', 'Content', 'Paks'),
+    join(gamePath, 'Content', 'Paks', '~mods'),
+    join(gamePath, 'Content', 'Paks')
+  ]
+  return candidates.filter(p => fs.existsSync(p))
+}
+
+function getGameExe(gamePath: string | null | undefined): string | null {
+  if (!gamePath || !fs.existsSync(gamePath)) return null
+  let files
+  try { files = fs.readdirSync(gamePath) } catch { return null }
+  // Case-sensitive filesystem on Linux — lowercase compare so we match
+  // whatever casing the publisher actually shipped.
+  const exe = files.find(f => {
+    const lower = f.toLowerCase()
+    return lower.endsWith('.exe') &&
+      !lower.includes('crash') &&
+      !lower.includes('unins') &&
+      !lower.includes('ue4prereq') &&
+      !lower.includes('redist')
+  })
+  return exe ? join(gamePath, exe) : null
+}
+
+function getUe4ssModsPath(gamePath: string): string | null {
+  // Even under Proton the game's Binaries/Win64 directory exists exactly
+  // as on Windows — Wine doesn't relocate game-relative paths.
+  const candidates = [
+    join(gamePath, 'HumanitZ', 'Binaries', 'Win64', 'ue4ss', 'Mods'),
+    // Legacy/flat UE4SS layout: UE4SS.dll + Mods/ directly in Binaries/Win64.
+    // checkUe4ssStatus reports this layout as "installed", so mod operations
+    // must be able to resolve it too — omitting it made the UE4SS tab say
+    // "installed" while every install/toggle failed with "not found".
+    join(gamePath, 'HumanitZ', 'Binaries', 'Win64', 'Mods'),
+    join(gamePath, 'ue4ss', 'Mods'),
+    join(gamePath, 'Mods')
+  ]
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p
+  }
+
+  return null
+}
+
+// Detect which Steam install channel is in use — surfaced to the UI so the
+// Proton setup guide can mention sandbox-specific quirks (Flatpak permissions,
+// Snap home confinement, etc.) when the user hits problems.
+function getSteamInstallType(): 'flatpak' | 'snap' | 'native' | 'unknown' {
+  const steamPath = getSteamPath()
+  if (!steamPath) return 'unknown'
+  if (steamPath.includes('.var/app/com.valvesoftware.Steam')) return 'flatpak'
+  if (steamPath.includes('/snap/steam/')) return 'snap'
+  return 'native'
+}
+
+// Proton's per-game Wine prefix lives under
+// steamapps/compatdata/<appid>/pfx — in whichever LIBRARY the game is
+// installed in, not necessarily the default Steam root. Mod files go in the
+// real Linux game directory, not inside the prefix; the prefix matters for
+// data the Windows build keeps under %LOCALAPPDATA% (save games).
+function getProtonPrefix(): string | null {
+  const steamPath = getSteamPath()
+  if (!steamPath) return null
+  for (const libPath of parseLibraryFolders(steamPath)) {
+    const prefix = join(libPath, 'steamapps', 'compatdata', HUMANITZ_APP_ID, 'pfx')
+    try {
+      if (fs.existsSync(prefix)) return prefix
+    } catch { /* unreadable library — try the next one */ }
+  }
+  return null
+}
+
+function fetchGameVersionFromSteamNews(): Promise<string | null> {
+  return new Promise<string | null>((resolve) => {
+    const url = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${HUMANITZ_APP_ID}&count=20&maxlength=0`
+    const request = net.request(url)
+    let body = ''
+
+    request.on('response', (response) => {
+      response.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      response.on('end', () => {
+        try {
+          const data = JSON.parse(body)
+          const items = data?.appnews?.newsitems || []
+          for (const item of items) {
+            const match = item.title.match(/(\d+\.\d+(?:\.\w+)?)\s*(Update|Patch|Hotfix)/i)
+            if (match) {
+              resolve(match[1])
+              return
+            }
+          }
+          resolve(null)
+        } catch {
+          resolve(null)
+        }
+      })
+    })
+
+    request.on('error', () => resolve(null))
+    request.end()
+
+    setTimeout(() => { try { request.abort() } catch { /* already completed */ } resolve(null) }, 3000)
+  })
+}
+
+function getGameVersionCached(): GameVersionInfo | null {
+  const cached = configStore.get('cachedGameVersion')
+  return cached || null
+}
+
+async function getGameVersion(gamePath: string | null | undefined): Promise<GameVersionInfo | null> {
+  if (!gamePath) return null
+
+  // Method 1: Steam appmanifest — local, fast, identical on all platforms
+  let buildId: string | null = null
+  let lastUpdated: string | null = null
+  const steamPath = getSteamPath()
+  if (steamPath) {
+    const libraryPaths = parseLibraryFolders(steamPath)
+    for (const libPath of libraryPaths) {
+      const manifestPath = join(libPath, 'steamapps', `appmanifest_${HUMANITZ_APP_ID}.acf`)
+      if (fs.existsSync(manifestPath)) {
+        const content = fs.readFileSync(manifestPath, 'utf-8')
+        const buildMatch = content.match(/"buildid"\s+"(\d+)"/)
+        const updatedMatch = content.match(/"LastUpdated"\s+"(\d+)"/)
+        if (buildMatch) {
+          buildId = buildMatch[1]
+          lastUpdated = updatedMatch ? new Date(parseInt(updatedMatch[1]) * 1000).toLocaleDateString() : null
+        }
+        break
+      }
+    }
+  }
+
+  // Method 2: Steam News API — version name parsing
+  const versionName = await fetchGameVersionFromSteamNews()
+
+  if (versionName || buildId) {
+    const result = { versionName, buildId, lastUpdated }
+    configStore.set('cachedGameVersion', result)
+    return result
+  }
+
+  // Method 3 (Windows PowerShell file version) intentionally omitted —
+  // not portable without bundling pefile/objdump dependencies, and we
+  // already have two independent version sources above.
+  return null
+}
+
+export {
+  detectGamePath,
+  isSteamGame,
+  getPaksPath,
+  getAllPaksPaths,
+  getGameExe,
+  getUe4ssModsPath,
+  getGameVersion,
+  getGameVersionCached,
+  getSteamPath,
+  getSteamInstallType,
+  getProtonPrefix,
+  HUMANITZ_APP_ID
+}

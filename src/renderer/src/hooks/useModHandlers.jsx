@@ -232,7 +232,7 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
       .filter(p => {
         if (!p) return false;
         const lower = p.toLowerCase();
-        return lower.endsWith('.zip') || lower.endsWith('.rar') || lower.endsWith('.pak');
+        return lower.endsWith('.zip') || lower.endsWith('.rar') || lower.endsWith('.7z') || lower.endsWith('.pak');
       });
     if (paths.length > 0) {
       await handleInstallWithPreview(paths);
@@ -266,16 +266,26 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
   const handleBatchToggle = useCallback(async (enable) => {
     if (!window.api || selectedMods.size === 0) return;
     const run = async () => {
-      let failed = 0;
+      // Resolve the selection (filenames) to stable mod ids first, then
+      // reconcile against a scan re-read after each toggle. A selected hybrid
+      // pair cross-toggles in the main process, so iterating the stale `modules`
+      // snapshot by filename would flip one half back or act on a filename that
+      // a prior toggle already renamed.
+      const selectedIds = new Set();
       for (const filename of selectedMods) {
         const mod = modules.find(m => m.filename === filename);
-        if (pakHandledBySelectedFolder(mod)) continue;
-        if (mod && mod.enabled !== enable) {
-          // One locked/in-use file (common while the game is running) must not
-          // abort the whole batch and leave it silently half-applied.
-          try { await window.api.mods.toggle(filename); }
-          catch (err) { console.error(`Batch toggle failed: ${filename}`, err); failed++; }
-        }
+        if (mod) selectedIds.add(mod.id);
+      }
+      let live = (await window.api?.mods?.scan?.()) || modules;
+      let failed = 0;
+      for (const id of selectedIds) {
+        const mod = live.find(m => m.id === id);
+        if (!mod || mod.enabled === enable) continue;
+        // One locked/in-use file (common while the game is running) must not
+        // abort the whole batch and leave it silently half-applied.
+        try { await window.api.mods.toggle(mod.filename); }
+        catch (err) { console.error(`Batch toggle failed: ${mod.filename}`, err); failed++; }
+        live = (await window.api?.mods?.scan?.()) || live;
       }
       await refreshMods();
       notifyManualChange();
@@ -289,7 +299,7 @@ export function useModHandlers({ addToast, showConfirm, t, isGameRunning, persis
     } else {
       await run();
     }
-  }, [selectedMods, modules, t, refreshMods, addToast, notifyManualChange, isGameRunning, showConfirm, pakHandledBySelectedFolder]);
+  }, [selectedMods, modules, t, refreshMods, addToast, notifyManualChange, isGameRunning, showConfirm]);
 
   const handleBatchRemove = useCallback(() => {
     if (selectedMods.size === 0) return;

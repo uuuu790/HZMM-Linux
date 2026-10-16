@@ -1,10 +1,11 @@
-// @vitest-environment happy-dom
-// ^ DOMPurify needs a DOM (document, Element) to run. happy-dom gives us a
-// lightweight browser env for this file only, so the rest of the unit tests
-// keep running under the default `node` environment.
+// @vitest-environment jsdom
+// ^ DOMPurify needs a DOM (document, Element) to run. jsdom gives us a browser
+// env for this file only, so the rest of the unit tests keep running under the
+// default `node` environment. Not happy-dom: DOMPurify >= 3.4.11 stops
+// sanitizing there (keeps <script>, drops allowed tags); jsdom matches Chromium.
 
 import { describe, it, expect } from 'vitest'
-import { bbcodeToHtml, _testInternals } from '../../src/renderer/src/utils/bbcode.js'
+import { bbcodeToHtml, _testInternals } from '../../src/renderer/src/utils/bbcode'
 
 const { safeUrl, extractYoutubeId, bbSizeToEm, bbcodeToRawHtml, decodeHtmlEntities } = _testInternals
 
@@ -37,6 +38,15 @@ describe('bbcode decodeHtmlEntities', () => {
   it('realistic Nexus description payload', () => {
     const raw = 'Extract here! &lt;br /&gt;*:&#92;SteamLibrary&#92;steamapps'
     expect(decodeHtmlEntities(raw)).toBe('Extract here! <br />*:\\SteamLibrary\\steamapps')
+  })
+  it('leaves out-of-range numeric entities as raw text (no RangeError crash)', () => {
+    // String.fromCodePoint throws for code points > 0x10FFFF — a malformed
+    // description like `&#9999999999;` must NOT crash the render.
+    expect(decodeHtmlEntities('&#9999999999;')).toBe('&#9999999999;')
+    expect(decodeHtmlEntities('&#x1FFFFFF;')).toBe('&#x1FFFFFF;')
+    // Highest valid code point still decodes.
+    expect(decodeHtmlEntities('&#1114111;')).toBe(String.fromCodePoint(0x10FFFF))
+    expect(decodeHtmlEntities('&#x10FFFF;')).toBe(String.fromCodePoint(0x10FFFF))
   })
 })
 

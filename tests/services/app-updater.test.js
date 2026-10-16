@@ -7,7 +7,7 @@ import {
   parseReleaseInfo,
   isAppImageInstall,
   replaceAppImageFile
-} from '../../src/main/services/app-updater.js'
+} from '../../src/main/services/app-updater'
 
 describe('compareVersions', () => {
   // Returns true when latest > current (update available)

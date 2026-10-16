@@ -38,12 +38,12 @@ function ProfilesTab({
 
   return (
     <div className="flex flex-col gap-4 w-full animate-slide-up duration-500">
-      <div className="flex items-center gap-3 mb-2 px-4">
-        <div className="p-2 rounded-full shadow-inner transition-colors duration-700" style={{ backgroundColor: 'rgba(var(--accent-rgb), 0.15)', color: 'var(--accent-500)' }}>
-          <Save className="w-5 h-5" />
-        </div>
-        <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 tracking-wide transition-colors duration-700">{t.profiles}</h3>
-        <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold transition-colors duration-700 shadow-inner">{profiles.length}</span>
+      {/* The page header already names this tab, so this row only carries the
+          count and the import action. */}
+      <div className="flex items-center gap-3 px-4">
+        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 transition-colors duration-700">
+          {(t.profileCount || '{n}').replace('{n}', profiles.length)}
+        </span>
         <button
           onClick={handleImportProfile}
           className="ml-auto flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-full border border-slate-200/80 dark:border-slate-700/70 text-slate-600 dark:text-slate-300 bg-white/60 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-800/70 hover:border-slate-300 dark:hover:border-slate-600 transition-all duration-300 active:scale-95 shadow-sm"
@@ -107,7 +107,7 @@ function ProfilesTab({
               <div
                 key={profile.id}
                 className="animate-slide-up"
-                style={{ animationFillMode: 'both', animationDelay: `${index * 60}ms`, animationDuration: '600ms' }}
+                style={{ animationFillMode: 'both', animationDelay: `${Math.min(index, 20) * 25}ms`, animationDuration: '350ms' }}
               >
                 <GlassCard isPill={false} className={`group flex flex-col px-4 py-3 md:px-5 md:py-3.5 relative ${isActive ? 'ring-2 bg-white/80 dark:bg-slate-800/80 shadow-[0_8px_24px_rgba(0,0,0,0.08)]' : ''}`}
                   style={isActive ? { '--tw-ring-color': 'rgba(var(--accent-rgb), 0.5)' } : undefined}>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildKeyMatcher, countSchemaMatches } from '../../src/renderer/src/utils/config-search.js';
+import { buildKeyMatcher, countSchemaMatches } from '../../src/renderer/src/utils/config-search';
 
 // A small schema fixture covering: 2 sections, mixed labels, keys with
 // description / no description, keys whose name is the only match clue.

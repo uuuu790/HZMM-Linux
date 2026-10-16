@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isAllowedModUrl, ALLOWED_MOD_HOSTS } from '../../src/main/ipc/mods.js'
+import { isAllowedModUrl, ALLOWED_MOD_HOSTS } from '../../src/main/ipc/mods'
 
 describe('ALLOWED_MOD_HOSTS', () => {
   it('is frozen to prevent runtime tampering', () => {
@@ -24,6 +24,10 @@ describe('isAllowedModUrl — legitimate downloads', () => {
   const legit = [
     'https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental-latest/UE4SS.zip',
     'https://objects.githubusercontent.com/github-production-release-asset-2e65be/abc/def.zip',
+    // Redirect TARGETS of github.com links — downloadFile enforces the same
+    // exact-match allowlist on every hop, so these must be listed explicitly.
+    'https://codeload.github.com/user/repo/zip/refs/heads/main',
+    'https://release-assets.githubusercontent.com/github-production-release-asset/abc/def.zip',
     'https://cf-files.nexusmods.com/cdn/1234/abc.zip',
     'https://amsterdam.nexusmods.com/some/path.zip',
     'https://chicago.nexusmods.com/any/path',
@@ -33,6 +37,11 @@ describe('isAllowedModUrl — legitimate downloads', () => {
     'https://paris.nexusmods.com/x',
     'https://prague.nexusmods.com/x',
     'https://singapore.nexusmods.com/x',
+    // nexus-cdn.com family — free/supporter downloads (nxm:// key+expires
+    // flow) and the newer Premium CDN location resolve here.
+    'https://files.nexus-cdn.com/1234/file.zip?md5=abc&expires=123',
+    'https://supporter-files.nexus-cdn.com/1234/file.zip?md5=abc&expires=123',
+    'https://premium-files.nexus-cdn.com/1234/file.zip',
   ]
 
   for (const url of legit) {
@@ -67,6 +76,19 @@ describe('isAllowedModUrl — attack vectors (must all be rejected)', () => {
   // Suffix-match bypass attempt
   it('rejects nexusmods.com.attacker.net', () => {
     expect(isAllowedModUrl('https://nexusmods.com.attacker.net/fake.zip')).toBe(false)
+  })
+
+  // Same rules for the nexus-cdn.com family: exact hosts only.
+  it('rejects bare nexus-cdn.com', () => {
+    expect(isAllowedModUrl('https://nexus-cdn.com/evil.zip')).toBe(false)
+  })
+
+  it('rejects unlisted nexus-cdn.com subdomains', () => {
+    expect(isAllowedModUrl('https://evil.nexus-cdn.com/mod.zip')).toBe(false)
+  })
+
+  it('rejects supporter-files.nexus-cdn.com.evil.com lookalike', () => {
+    expect(isAllowedModUrl('https://supporter-files.nexus-cdn.com.evil.com/fake.zip')).toBe(false)
   })
 
   // GitHub subdomains not in the allowlist

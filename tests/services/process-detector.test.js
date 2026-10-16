@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parsePgrepOutput,
   GAME_PROCESS_NAMES,
-} from '../../src/main/services/process-detector.js'
+} from '../../src/main/services/process-detector'
 
 // On Linux the game runs under Wine/Proton, so the kernel process is
 // `wine64-preloader` but the full command line still carries the .exe name.

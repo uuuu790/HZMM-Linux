@@ -57,7 +57,14 @@ body {
 .dark .mod-readme h3 { color: #cbd5e1; }
 .mod-readme p { margin: 0.4em 0; }
 .mod-readme ul, .mod-readme ol { margin: 0.4em 0; padding-left: 1.5em; }
+/* Tailwind's preflight sets list-style: none on every ul/ol — without these
+   README lists render with no bullets and numbered steps lose their numbers. */
+.mod-readme ul { list-style: disc; }
+.mod-readme ol { list-style: decimal; }
+.mod-readme ul ul { list-style: circle; }
 .mod-readme li { margin: 0.2em 0; }
+.mod-readme li::marker { color: #94a3b8; }
+.dark .mod-readme li::marker { color: #64748b; }
 .mod-readme hr { border: none; border-top: 1px solid #e2e8f0; margin: 0.8em 0; }
 .dark .mod-readme hr { border-color: #334155; }
 .mod-readme a { color: #2563eb; text-decoration: underline; }
@@ -113,6 +120,9 @@ body {
 .nexus-description center, .nexus-description [style*="text-align:center"], .nexus-description [style*="text-align: center"] { text-align: center; }
 .nexus-description [style*="text-align:right"], .nexus-description [style*="text-align: right"] { text-align: right; }
 .nexus-description ul, .nexus-description ol { margin: 0.4em 0; padding-left: 1.75em; }
+.nexus-description ul { list-style: disc; }
+.nexus-description ol { list-style: decimal; }
+.nexus-description ul ul { list-style: circle; }
 .nexus-description li { margin: 0.15em 0; }
 .nexus-description li::marker { color: #94a3b8; }
 .dark .nexus-description li::marker { color: #64748b; }

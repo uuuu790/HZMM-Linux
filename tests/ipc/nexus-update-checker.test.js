@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateOutdated } from '../../src/main/ipc/nexus-update-checker.js';
+import { evaluateOutdated } from '../../src/main/ipc/nexus-update-checker';
 
 // V2 file fixtures (category_id 1 = main). uploaded_timestamp arrives as an
 // ISO string from the V2 GraphQL `date` field.

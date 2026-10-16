@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowDownUp, GripVertical, Trophy, AlertTriangle, X, Check } from 'lucide-react';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 // Load order is the engine's case-insensitive alphabetical mount order of the
 // ENABLED-form filename; the later mount wins conflicts. Mirrors
-// comparePakNames in main/ipc/mods-order.js.
+// comparePakNames in main/ipc/mods-order.ts.
 const loadName = (m) => (m.filename || '').replace(/\.disabled$/i, '');
 const cmpName = (a, b) => {
   const x = a.toLowerCase();
@@ -67,14 +68,19 @@ const LoadOrderModal = ({ isOpen, onClose, pakMods, conflicts, onApply, applying
 
   if (!isOpen) return null;
 
-  return (
+  // Portal to body: ModulesTab lives inside the tab-switch wrapper whose
+  // animate-tab-left/right keeps a resolved transform (fill-mode forwards),
+  // which turns it into the containing block for fixed descendants — the
+  // inset-0 backdrop would only cover the content column instead of the
+  // viewport. Same escape hatch as ModDetailModal / the sort dropdown.
+  return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 [-webkit-app-region:no-drag]">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-zoom-in" onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="load-order-modal-title"
-        className="relative w-full max-w-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring"
+        className="relative w-full max-w-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-[2rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] border border-white/60 dark:border-slate-700/50 overflow-hidden animate-modal-spring"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/60 dark:border-slate-700/50">
           <h3 id="load-order-modal-title" className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -89,7 +95,7 @@ const LoadOrderModal = ({ isOpen, onClose, pakMods, conflicts, onApply, applying
           <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">{t.loadOrderHint || 'Drag to reorder — lower rows load later and win conflicts. Files are renamed on apply.'}</p>
         </div>
 
-        <div className="p-6 pt-3 max-h-[55vh] overflow-y-auto">
+        <div className="p-6 pt-3 max-h-[65vh] overflow-y-auto">
           {order.length === 0 ? (
             <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-8 font-medium">{t.loadOrderEmpty || 'No PAK mods installed'}</p>
           ) : (
@@ -151,7 +157,8 @@ const LoadOrderModal = ({ isOpen, onClose, pakMods, conflicts, onApply, applying
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

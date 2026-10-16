@@ -1,0 +1,333 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "General": {
+      "label": { "en": "General", "zh-TW": "一般" },
+      "enableKey": "Enabled",
+      "keys": {
+        "Enabled": {
+          "type": "bool",
+          "default": true,
+          "label": { "en": "Mod enabled", "zh-TW": "啟用模組" },
+          "description": {
+            "en": "Section master switch (enableKey): turn it off and the other rows in this section are greyed out.",
+            "zh-TW": "區段總開關（enableKey）：關閉時本區段其他欄位會變暗停用。"
+          }
+        },
+        "PlayerName": {
+          "type": "text",
+          "default": "Survivor",
+          "label": { "en": "Player name", "zh-TW": "玩家名稱" },
+          "description": {
+            "en": "Free text. Quotes and backslashes are escaped for you, so C:\\Games or Say \"hi\" are fine.",
+            "zh-TW": "自由文字。引號與反斜線會自動跳脫，輸入 C:\\Games 或 Say \"hi\" 都沒問題。"
+          }
+        },
+        "Difficulty": {
+          "type": "select",
+          "default": "Normal",
+          "label": { "en": "Difficulty", "zh-TW": "難度" },
+          "description": {
+            "en": "Three or more options render as a dropdown. The value is written quoted.",
+            "zh-TW": "三個以上選項會顯示成下拉選單，寫入時加引號。"
+          },
+          "options": [
+            { "value": "Easy" },
+            { "value": "Normal" },
+            { "value": "Hard" }
+          ]
+        },
+        "PermaDeath": {
+          "type": "bool",
+          "default": false,
+          "label": { "en": "Permadeath", "zh-TW": "永久死亡" },
+          "description": {
+            "en": "showWhen with two conditions (AND): only visible while Difficulty is Hard and the mod is enabled.",
+            "zh-TW": "showWhen 兩個條件（AND）：只有難度為 Hard 且模組啟用時才顯示。"
+          },
+          "showWhen": { "Difficulty": "Hard", "Enabled": true }
+        },
+        "LootMode": {
+          "type": "select",
+          "default": "Solo",
+          "label": { "en": "Loot mode", "zh-TW": "拾取模式" },
+          "description": {
+            "en": "Two options render as pills.",
+            "zh-TW": "兩個選項會顯示成膠囊按鈕。"
+          },
+          "options": [
+            { "value": "Solo" },
+            { "value": "Shared" }
+          ]
+        }
+      }
+    },
+    "Numbers": {
+      "label": { "en": "Numbers", "zh-TW": "數值" },
+      "keys": {
+        "MaxHealth": {
+          "type": "int",
+          "default": 100,
+          "min": 1,
+          "max": 9999,
+          "label": { "en": "Max health", "zh-TW": "最大生命值" },
+          "description": {
+            "en": "Plain int box, clamped to 1-9999. Current: {value} HP.",
+            "zh-TW": "一般整數輸入框，限制在 1-9999。目前：{value} HP。"
+          }
+        },
+        "SpawnRate": {
+          "type": "float",
+          "default": 1.0,
+          "label": { "en": "Spawn rate", "zh-TW": "生成倍率" },
+          "description": {
+            "en": "Plain float box without min/max. Anything that is not a number reverts when the box loses focus.",
+            "zh-TW": "沒有 min/max 的一般小數輸入框。輸入非數字時，離開欄位會還原。"
+          }
+        },
+        "CarryBonus": {
+          "type": "int",
+          "widget": "slider",
+          "default": 50,
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "label": { "en": "Carry bonus", "zh-TW": "負重加成" },
+          "description": {
+            "en": "+{value}% = carry limit {eval: 35 * (1 + value / 100)} kg",
+            "zh-TW": "+{value}% = 負重上限 {eval: 35 * (1 + value / 100)} kg"
+          }
+        },
+        "DamageMul": {
+          "type": "float",
+          "widget": "slider",
+          "default": 1.0,
+          "min": 0.1,
+          "max": 5.0,
+          "step": 0.1,
+          "label": { "en": "Damage multiplier", "zh-TW": "傷害倍率" },
+          "description": {
+            "en": "Deals {eval: value * 100}% of normal damage.",
+            "zh-TW": "造成一般傷害的 {eval: value * 100}%。"
+          }
+        },
+        "DayLength": {
+          "type": "int",
+          "widget": "slider",
+          "default": 30,
+          "min": 10,
+          "max": 120,
+          "step": 5,
+          "label": { "en": "Day length (minutes)", "zh-TW": "一天長度（分鐘）" },
+          "description": {
+            "en": "{value} min = {eval: value * 60} s of real time.",
+            "zh-TW": "{value} 分鐘 = 現實時間 {eval: value * 60} 秒。"
+          }
+        }
+      }
+    },
+    "Radius": {
+      "label": { "en": "Radius", "zh-TW": "半徑" },
+      "keys": {
+        "RadiusMode": {
+          "type": "select",
+          "default": "Multiplier",
+          "label": { "en": "Radius mode", "zh-TW": "半徑模式" },
+          "description": {
+            "en": "Switches which of the next two rows is visible (showWhen).",
+            "zh-TW": "決定下面兩列哪一列顯示（showWhen）。"
+          },
+          "options": [
+            { "value": "Multiplier" },
+            { "value": "Fixed" }
+          ]
+        },
+        "RadiusMultiplier": {
+          "type": "float",
+          "widget": "slider",
+          "default": 2.0,
+          "min": 0.5,
+          "max": 10.0,
+          "step": 0.5,
+          "label": { "en": "Radius multiplier", "zh-TW": "半徑倍率" },
+          "description": {
+            "en": "Radius = {eval: value * 900} (base 900).",
+            "zh-TW": "半徑 = {eval: value * 900}（基礎 900）。"
+          },
+          "showWhen": { "RadiusMode": "Multiplier" }
+        },
+        "RadiusFixed": {
+          "type": "int",
+          "default": 1800,
+          "min": 100,
+          "max": 20000,
+          "label": { "en": "Fixed radius", "zh-TW": "固定半徑" },
+          "description": {
+            "en": "About {eval: value / 100} m.",
+            "zh-TW": "約 {eval: value / 100} 公尺。"
+          },
+          "showWhen": { "RadiusMode": "Fixed" }
+        }
+      }
+    },
+    "Appearance": {
+      "label": { "en": "Appearance", "zh-TW": "外觀" },
+      "keys": {
+        "AccentColor": {
+          "type": "color",
+          "default": "#3b82f6",
+          "label": { "en": "Accent color", "zh-TW": "強調色" },
+          "description": {
+            "en": "Stored as a quoted lowercase \"#rrggbb\" string.",
+            "zh-TW": "以加引號的小寫 \"#rrggbb\" 字串儲存。"
+          }
+        },
+        "HudScale": {
+          "type": "select",
+          "default": 1,
+          "label": { "en": "HUD scale", "zh-TW": "HUD 縮放" },
+          "description": {
+            "en": "All option values are numbers, so the value is written without quotes (HudScale = 2).",
+            "zh-TW": "選項值全是數字，所以寫入時不加引號（HudScale = 2）。"
+          },
+          "options": [
+            { "value": 1 },
+            { "value": 2 },
+            { "value": 3 }
+          ]
+        }
+      }
+    },
+    "Hotkeys": {
+      "label": { "en": "Hotkeys", "zh-TW": "快捷鍵" },
+      "keys": {
+        "ToggleKey": {
+          "type": "keybind",
+          "default": "F6",
+          "label": { "en": "Toggle overlay", "zh-TW": "切換介面" },
+          "description": {
+            "en": "Stored as UE4SS Key names, e.g. F6, Ctrl+T, Alt+ONE.",
+            "zh-TW": "以 UE4SS Key 名稱儲存，例如 F6、Ctrl+T、Alt+ONE。"
+          }
+        },
+        "TeleportKey": {
+          "type": "keybind",
+          "default": "Ctrl+NUM_ONE",
+          "label": { "en": "Teleport home", "zh-TW": "傳送回家" }
+        }
+      }
+    },
+    "Lists": {
+      "label": { "en": "Lists", "zh-TW": "清單" },
+      "keys": {
+        "AllowedWeapons": {
+          "type": "multi-select",
+          "default": ["Pistol", "Rifle"],
+          "label": { "en": "Allowed weapons", "zh-TW": "允許的武器" },
+          "description": {
+            "en": "Written as a one-line Lua array, in the order of the options.",
+            "zh-TW": "寫成單行 Lua 陣列，順序依照 options。"
+          },
+          "options": [
+            { "value": "Pistol" },
+            { "value": "Rifle" },
+            { "value": "Shotgun" },
+            { "value": "Bow" }
+          ]
+        },
+        "FriendNames": {
+          "type": "list",
+          "default": ["Alice", "Bob"],
+          "label": { "en": "Friends", "zh-TW": "好友名單" },
+          "description": {
+            "en": "Free-form list. The button on the right shows config.lua in Explorer (openPath, relativeTo mod, reveal).",
+            "zh-TW": "自由字串清單。右側按鈕會在檔案總管中顯示 config.lua（openPath，relativeTo mod，reveal）。"
+          },
+          "openPath": {
+            "path": "Scripts/config.lua",
+            "relativeTo": "mod",
+            "action": "reveal"
+          }
+        }
+      }
+    },
+    "Overrides": {
+      "label": { "en": "Overrides (optional keys)", "zh-TW": "覆寫（optional key）" },
+      "keys": {
+        "GreetingOverride": {
+          "type": "text",
+          "optional": true,
+          "default": "Welcome back!",
+          "label": { "en": "Greeting override", "zh-TW": "自訂問候語" },
+          "description": {
+            "en": "Optional and present in config.lua: switch it off and the line is removed (Lua reads nil).",
+            "zh-TW": "optional 且 config.lua 中已有：關閉後整行移除（Lua 讀到 nil）。"
+          }
+        },
+        "DamageOverride": {
+          "type": "float",
+          "widget": "slider",
+          "optional": true,
+          "default": 1.5,
+          "min": 0.1,
+          "max": 10.0,
+          "step": 0.1,
+          "label": { "en": "Damage override", "zh-TW": "傷害覆寫" },
+          "description": {
+            "en": "Optional and absent: switch it on and HZMM writes DamageOverride = 1.5 into config.lua.",
+            "zh-TW": "optional 且不存在：開啟後 HZMM 會把 DamageOverride = 1.5 寫進 config.lua。"
+          }
+        },
+        "WeatherOverride": {
+          "type": "select",
+          "optional": true,
+          "label": { "en": "Weather override", "zh-TW": "天氣覆寫" },
+          "description": {
+            "en": "Optional select without a default: switching it on writes the first option (\"Clear\").",
+            "zh-TW": "沒有 default 的 optional select：開啟時寫入第一個選項（\"Clear\"）。"
+          },
+          "options": [
+            { "value": "Clear" },
+            { "value": "Rain" },
+            { "value": "Fog" }
+          ]
+        },
+        "BonusItems": {
+          "type": "list",
+          "optional": true,
+          "default": ["Bandage", "Water"],
+          "label": { "en": "Bonus start items", "zh-TW": "額外起始物品" }
+        }
+      }
+    },
+    "Advanced": {
+      "label": { "en": "Advanced", "zh-TW": "進階" },
+      "collapsed": true,
+      "keys": {
+        "LogSettings": {
+          "type": "bool",
+          "default": true,
+          "label": { "en": "Log settings on load", "zh-TW": "載入時輸出設定" },
+          "description": {
+            "en": "Prints every setting to the UE4SS log. The button on the right opens UE4SS.log (openPath, relativeTo game).",
+            "zh-TW": "把所有設定輸出到 UE4SS log。右側按鈕會開啟 UE4SS.log（openPath，relativeTo game）。"
+          },
+          "openPath": {
+            "path": "HumanitZ/Binaries/Win64/ue4ss/UE4SS.log",
+            "relativeTo": "game",
+            "action": "open"
+          }
+        },
+        "TickRate": {
+          "type": "int",
+          "widget": "slider",
+          "default": 10,
+          "min": 1,
+          "max": 60,
+          "label": "Tick rate",
+          "description": "Updates per second: one update every {eval: 1000 / value} ms. (Plain-string label and description, no i18n object.)"
+        }
+      }
+    }
+  }
+}

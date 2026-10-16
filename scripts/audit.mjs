@@ -20,6 +20,18 @@ import { fileURLToPath } from 'url';
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'src');
 
+// Scanned source extensions. Checks that target one module match it by its
+// extension-less path (isModule) so they keep firing while files migrate
+// .js → .ts / .jsx → .tsx. Handler regexes likewise tolerate TS parameter
+// and return-type annotations — a pattern that silently stops matching
+// after a rename is worse than no check at all.
+const SOURCE_EXT_RE = /\.(?:js|jsx|mjs|ts|tsx|mts)$/;
+
+function isModule(file, modulePath) {
+  const base = file.replace(SOURCE_EXT_RE, '');
+  return base === modulePath || base.endsWith(`/${modulePath}`);
+}
+
 const checks = [
   {
     id: 'XSS-MARKED-RAW',
@@ -38,7 +50,8 @@ const checks = [
     test: (file, content) => {
       if (!file.startsWith('src/main/')) return null;
       const findings = [];
-      const re = /ipcMain\.handle\(\s*['"]([^'"]+)['"]\s*,\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*(?:\{|serializeModWrite)/g;
+      // `(?::[^=]*)?` skips an optional TS return type: `(...): Promise<X> =>`
+      const re = /ipcMain\.handle\(\s*['"]([^'"]+)['"]\s*,\s*(?:async\s*)?\(([^)]*)\)\s*(?::[^=]*)?=>\s*(?:\{|serializeModWrite)/g;
       for (const m of content.matchAll(re)) {
         const channel = m[1];
         const params = m[2];
@@ -92,7 +105,7 @@ const checks = [
     id: 'NON-ATOMIC-CONFIG-WRITE',
     description: 'config-store writes CONFIG_FILE without tmp + rename',
     test: (file, content) => {
-      if (!file.endsWith('config-store.js')) return null;
+      if (!isModule(file, 'config-store')) return null;
       const m = /writeFileSync\(\s*CONFIG_FILE/.exec(content);
       if (!m) return null;
       const window = content.slice(m.index, m.index + 400);
@@ -105,7 +118,7 @@ const checks = [
     id: 'INSTALL-NO-ROLLBACK',
     description: 'mods-install destructive clean called without withRollback wrapper',
     test: (file, content) => {
-      if (!file.endsWith('mods-install.js')) return null;
+      if (!isModule(file, 'mods-install')) return null;
       // Old API was cleanExistingMod(); the rollback-aware replacement is
       // withRollback() + rotateModsToBackup(). Flag any reintroduction.
       if (/\bcleanExistingMod\s*\(/.test(content)) {
@@ -119,7 +132,7 @@ const checks = [
     id: 'KEYBIND-USES-EKEY',
     description: 'KeybindInput emits combo from e.key instead of physical e.code',
     test: (file, content) => {
-      if (!file.endsWith('KeybindInput.jsx')) return null;
+      if (!isModule(file, 'KeybindInput')) return null;
       if (/parts\.push\(\s*e\.key/.test(content)) {
         return { line: findLine(content, /parts\.push\(\s*e\.key/), severity: 'MEDIUM',
           msg: 'KeybindInput should use codeToMainKey(e.code), not e.key — Shift+1 otherwise records as Shift+!' };
@@ -131,10 +144,10 @@ const checks = [
     id: 'TOGGLE-NO-MUTEX',
     description: 'mods:toggle / mods:remove handler not wrapped in serializeModWrite',
     test: (file, content) => {
-      if (!file.endsWith('main/ipc/mods.js')) return null;
+      if (!isModule(file, 'main/ipc/mods')) return null;
       const findings = [];
       for (const channel of ['mods:toggle', 'mods:remove']) {
-        const re = new RegExp(`ipcMain\\.handle\\(\\s*['"]${channel.replace(':', ':')}['"]\\s*,\\s*(?:async\\s*)?\\([^)]*\\)\\s*=>\\s*(\\w+)`, 'g');
+        const re = new RegExp(`ipcMain\\.handle\\(\\s*['"]${channel.replace(':', ':')}['"]\\s*,\\s*(?:async\\s*)?\\([^)]*\\)\\s*(?::[^=]*)?=>\\s*(\\w+)`, 'g');
         for (const m of content.matchAll(re)) {
           if (m[1] === 'serializeModWrite') continue;
           findings.push({ line: lineAt(content, m.index), severity: 'MEDIUM',
@@ -159,8 +172,9 @@ const checks = [
     id: 'APP-UPDATE-TRUSTS-RENDERER',
     description: 'app-update:download IPC accepts URL/hash from renderer instead of re-fetching canonical',
     test: (file, content) => {
-      if (!file.endsWith('main/ipc/app-update.js')) return null;
-      const re = /ipcMain\.handle\(\s*['"]app-update:download['"]\s*,\s*async\s*\(\s*_\s*,\s*(downloadUrl|url)/;
+      if (!isModule(file, 'main/ipc/app-update')) return null;
+      // `(?::[^,)]*)?` skips an optional TS annotation on the event param
+      const re = /ipcMain\.handle\(\s*['"]app-update:download['"]\s*,\s*async\s*\(\s*_\s*(?::[^,)]*)?,\s*(downloadUrl|url)/;
       const m = re.exec(content);
       if (!m) return null;
       return { line: lineAt(content, m.index), severity: 'HIGH',
@@ -183,7 +197,7 @@ function* walk(dir) {
     if (entry.name === 'node_modules' || entry.name === 'out' || entry.name === 'dist') continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) yield* walk(full);
-    else if (/\.(js|jsx|mjs)$/.test(entry.name)) yield full;
+    else if (SOURCE_EXT_RE.test(entry.name)) yield full;
   }
 }
 

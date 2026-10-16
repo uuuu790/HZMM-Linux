@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildBrowseUrl, parseWorkshopIds, buildDetailsBody,
   adaptWorkshopItem, mergeDetails, STEAM_WORKSHOP_APP_ID,
-} from '../../src/main/ipc/steam-workshop-util.js'
+} from '../../src/main/ipc/steam-workshop-util'
 
 describe('buildBrowseUrl', () => {
   it('maps trend with a 7-day window and the app id', () => {

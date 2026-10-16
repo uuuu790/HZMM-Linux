@@ -3,9 +3,13 @@ import globals from 'globals'
 import n from 'eslint-plugin-n'
 import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
+import tseslint from 'typescript-eslint'
 
-const mainProcessFiles = ['src/main/**/*.js', 'src/preload/**/*.js']
-const rendererFiles = ['src/renderer/src/**/*.{js,jsx}']
+// .ts/.tsx share the JS blocks below (same environments and security rules);
+// the TypeScript block at the end swaps in the TS parser for them.
+const mainProcessFiles = ['src/main/**/*.{js,ts}', 'src/preload/**/*.{js,ts}']
+const rendererFiles = ['src/renderer/src/**/*.{js,jsx,ts,tsx}']
+const tsFiles = ['src/**/*.{ts,tsx}']
 
 export default [
   {
@@ -89,6 +93,18 @@ export default [
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
       'no-empty': ['error', { allowEmptyCatch: false }],
+    },
+  },
+
+  // TypeScript — parser + recommended rules, scoped to TS files only so the
+  // untouched JS keeps using espree. Must come after the blocks above so the
+  // TS-aware no-unused-vars replaces the core rule.
+  ...tseslint.configs.recommended.map(config => ({ ...config, files: tsFiles })),
+  {
+    files: tsFiles,
+    rules: {
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 

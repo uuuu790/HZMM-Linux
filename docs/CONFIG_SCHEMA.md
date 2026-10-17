@@ -144,7 +144,7 @@ if Config.Difficulty == "Hard" then
 end
 ```
 
-For a complete mod that uses every widget, see [`examples/full-widget-demo/`](examples/full-widget-demo/).
+For one small example per feature, plus a complete mod that uses every widget, see [`examples/`](examples/).
 
 ---
 
@@ -1025,7 +1025,7 @@ return Config
 
 ## Full example
 
-[`examples/full-widget-demo/`](examples/full-widget-demo/) is a complete, loadable mod in the recommended layout. Copy it as a starting point.
+[`examples/`](examples/) holds one small example per feature (`NN-name.hzmm.config.json` + `NN-name.config.lua`; its `README.txt` lists them and shows where each file goes in a mod) and `17-all-in-one`, a complete mod that uses every widget. Copy one as a starting point. `17-all-in-one` covers:
 
 | Section | Demonstrates |
 |:--|:--|
@@ -1038,7 +1038,7 @@ return Config
 | Overrides | `optional` keys: one present, three absent (float slider with default, select without default, list with default) |
 | Advanced | `collapsed`, `openPath` (`relativeTo: "game"`), plain-string `label` / `description` |
 
-`Scripts/main.lua` loads the config with `require("config")` and uses every value.
+`17-all-in-one.main.lua` loads the config with `require("config")` and uses every value.
 
 ---
 

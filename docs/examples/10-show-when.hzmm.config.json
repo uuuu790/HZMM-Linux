@@ -1,0 +1,56 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "Radius": {
+      "label": { "en": "Radius", "zh-TW": "半徑" },
+      "keys": {
+        "Debug": {
+          "type": "bool",
+          "default": false,
+          "label": { "en": "Debug", "zh-TW": "除錯" },
+          "description": { "en": "Used by the last row.", "zh-TW": "最後一列會用到。" }
+        },
+        "RadiusMode": {
+          "type": "select",
+          "default": "Multiplier",
+          "label": { "en": "Radius mode", "zh-TW": "半徑模式" },
+          "description": { "en": "Decides which of the next two rows is shown.", "zh-TW": "決定下面兩列顯示哪一列。" },
+          "options": [
+            { "value": "Multiplier" },
+            { "value": "Fixed" }
+          ]
+        },
+        "RadiusMultiplier": {
+          "type": "float",
+          "widget": "slider",
+          "default": 2.0,
+          "min": 0.5,
+          "max": 10.0,
+          "step": 0.5,
+          "label": { "en": "Radius multiplier", "zh-TW": "半徑倍率" },
+          "description": { "en": "Shown while Radius mode is Multiplier.", "zh-TW": "半徑模式為 Multiplier 時顯示。" },
+          "showWhen": { "RadiusMode": "Multiplier" }
+        },
+        "RadiusFixed": {
+          "type": "int",
+          "default": 1800,
+          "min": 100,
+          "max": 20000,
+          "label": { "en": "Fixed radius", "zh-TW": "固定半徑" },
+          "description": { "en": "Shown while Radius mode is Fixed.", "zh-TW": "半徑模式為 Fixed 時顯示。" },
+          "showWhen": { "RadiusMode": "Fixed" }
+        },
+        "DrawRadius": {
+          "type": "bool",
+          "default": false,
+          "label": { "en": "Draw radius", "zh-TW": "繪製半徑" },
+          "description": {
+            "en": "Two conditions (AND): Radius mode is Fixed and Debug is on.",
+            "zh-TW": "兩個條件（AND）：半徑模式為 Fixed 且開啟除錯。"
+          },
+          "showWhen": { "RadiusMode": "Fixed", "Debug": true }
+        }
+      }
+    }
+  }
+}

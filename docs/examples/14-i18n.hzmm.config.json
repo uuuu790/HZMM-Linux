@@ -1,0 +1,50 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "General": {
+      "label": {
+        "en": "General",
+        "zh-TW": "一般",
+        "ja": "一般",
+        "ko": "일반",
+        "ru": "Общие",
+        "de": "Allgemein",
+        "fr": "Général"
+      },
+      "keys": {
+        "MaxHealth": {
+          "type": "int",
+          "default": 100,
+          "min": 1,
+          "max": 9999,
+          "label": {
+            "en": "Max health",
+            "zh-TW": "最大生命值",
+            "ja": "最大HP",
+            "ko": "최대 체력",
+            "ru": "Макс. здоровье",
+            "de": "Maximale Gesundheit",
+            "fr": "Santé max"
+          },
+          "description": {
+            "en": "Shown in the app language. Missing languages fall back to en.",
+            "zh-TW": "依 App 語言顯示，缺少的語言會改用 en。",
+            "ja": "アプリの言語で表示されます。ない言語は en になります。",
+            "ko": "앱 언어로 표시됩니다. 없는 언어는 en으로 표시됩니다.",
+            "ru": "Показывается на языке приложения; если перевода нет — на en.",
+            "de": "Wird in der App-Sprache angezeigt; fehlende Sprachen fallen auf en zurück.",
+            "fr": "Affiché dans la langue de l'application ; les langues manquantes utilisent en."
+          }
+        },
+        "TickRate": {
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 60,
+          "label": "Tick rate",
+          "description": "A plain string label and description: the same text in every language."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "Overrides": {
+      "label": { "en": "Overrides", "zh-TW": "覆寫" },
+      "keys": {
+        "GreetingOverride": {
+          "type": "text",
+          "optional": true,
+          "default": "Welcome back!",
+          "label": { "en": "Greeting override", "zh-TW": "自訂問候語" },
+          "description": {
+            "en": "Present in config.lua: switch it off and the line is removed.",
+            "zh-TW": "config.lua 裡已有：關閉後整行移除。"
+          }
+        },
+        "DamageOverride": {
+          "type": "float",
+          "widget": "slider",
+          "optional": true,
+          "default": 1.5,
+          "min": 0.1,
+          "max": 10.0,
+          "step": 0.1,
+          "label": { "en": "Damage override", "zh-TW": "傷害覆寫" },
+          "description": {
+            "en": "Absent: switch it on and DamageOverride = 1.5 is written.",
+            "zh-TW": "不存在：開啟後會寫入 DamageOverride = 1.5。"
+          }
+        },
+        "WeatherOverride": {
+          "type": "select",
+          "optional": true,
+          "label": { "en": "Weather override", "zh-TW": "天氣覆寫" },
+          "description": {
+            "en": "No default: switching it on writes the first option.",
+            "zh-TW": "沒有 default：開啟時寫入第一個選項。"
+          },
+          "options": [
+            { "value": "Clear" },
+            { "value": "Rain" },
+            { "value": "Fog" }
+          ]
+        },
+        "BonusItems": {
+          "type": "list",
+          "optional": true,
+          "default": ["Bandage", "Water"],
+          "label": { "en": "Bonus start items", "zh-TW": "額外起始物品" }
+        }
+      }
+    }
+  }
+}

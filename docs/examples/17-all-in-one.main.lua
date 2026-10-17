@@ -1,4 +1,5 @@
--- HZMM Widget Demo - reads every setting from Scripts/config.lua and logs it.
+-- HZMM config demo: every widget in one mod - Scripts/main.lua.
+-- Reads every setting from Scripts/config.lua (17-all-in-one.config.lua) and logs it.
 --
 -- UE4SS adds this mod's Scripts/ folder to package.path, so require("config")
 -- finds Scripts/config.lua without any path code. (Keeping config.lua in the

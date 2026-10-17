@@ -1,0 +1,30 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "Files": {
+      "label": { "en": "Files", "zh-TW": "檔案" },
+      "keys": {
+        "LogSettings": {
+          "type": "bool",
+          "default": true,
+          "label": { "en": "Log settings on load", "zh-TW": "載入時輸出設定" },
+          "description": {
+            "en": "The button on the right opens UE4SS.log (relativeTo: game, action: open).",
+            "zh-TW": "右側按鈕會開啟 UE4SS.log（relativeTo: game，action: open）。"
+          },
+          "openPath": { "path": "HumanitZ/Binaries/Win64/ue4ss/UE4SS.log", "relativeTo": "game", "action": "open" }
+        },
+        "ProfileName": {
+          "type": "text",
+          "default": "Default",
+          "label": { "en": "Profile name", "zh-TW": "設定檔名稱" },
+          "description": {
+            "en": "The button on the right shows this config.lua in its folder (relativeTo: mod, action: reveal).",
+            "zh-TW": "右側按鈕會在資料夾中顯示這個 config.lua（relativeTo: mod，action: reveal）。"
+          },
+          "openPath": { "path": "Scripts/config.lua", "relativeTo": "mod", "action": "reveal" }
+        }
+      }
+    }
+  }
+}

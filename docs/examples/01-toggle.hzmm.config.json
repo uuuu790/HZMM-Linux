@@ -1,0 +1,25 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "General": {
+      "label": { "en": "General", "zh-TW": "一般" },
+      "keys": {
+        "ShowHud": {
+          "type": "bool",
+          "default": true,
+          "label": { "en": "Show HUD", "zh-TW": "顯示 HUD" },
+          "description": {
+            "en": "A bool key renders as a switch and is written as true / false.",
+            "zh-TW": "bool 會顯示成開關，寫入 true / false。"
+          }
+        },
+        "DebugLog": {
+          "type": "bool",
+          "default": false,
+          "label": { "en": "Debug log", "zh-TW": "除錯記錄" },
+          "description": { "en": "Off by default.", "zh-TW": "預設關閉。" }
+        }
+      }
+    }
+  }
+}

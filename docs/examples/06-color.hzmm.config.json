@@ -1,0 +1,21 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "Appearance": {
+      "label": { "en": "Appearance", "zh-TW": "外觀" },
+      "keys": {
+        "AccentColor": {
+          "type": "color",
+          "default": "#3b82f6",
+          "label": { "en": "Accent color", "zh-TW": "強調色" },
+          "description": { "en": "Stored as a lowercase \"#rrggbb\" string.", "zh-TW": "以小寫的 \"#rrggbb\" 字串儲存。" }
+        },
+        "WarningColor": {
+          "type": "color",
+          "default": "#f59e0b",
+          "label": { "en": "Warning color", "zh-TW": "警告色" }
+        }
+      }
+    }
+  }
+}

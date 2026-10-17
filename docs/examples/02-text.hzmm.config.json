@@ -1,0 +1,24 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "General": {
+      "label": { "en": "General", "zh-TW": "一般" },
+      "keys": {
+        "PlayerName": {
+          "type": "text",
+          "default": "Survivor",
+          "label": { "en": "Player name", "zh-TW": "玩家名稱" },
+          "description": {
+            "en": "Free text, written quoted. Quotes and backslashes are escaped for you: try C:\\Games or Say \"hi\".",
+            "zh-TW": "自由文字，寫入時加引號。引號與反斜線會自動跳脫：試試輸入 C:\\Games 或 Say \"hi\"。"
+          }
+        },
+        "WelcomeMessage": {
+          "type": "text",
+          "default": "Welcome back!",
+          "label": { "en": "Welcome message", "zh-TW": "歡迎訊息" }
+        }
+      }
+    }
+  }
+}

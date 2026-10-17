@@ -1,0 +1,47 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "Tokens": {
+      "label": { "en": "Tokens", "zh-TW": "說明變數" },
+      "keys": {
+        "CarryBonus": {
+          "type": "int",
+          "widget": "slider",
+          "default": 50,
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "label": { "en": "Carry bonus", "zh-TW": "負重加成" },
+          "description": {
+            "en": "+{value}% = carry limit {eval: 35 * (1 + value / 100)} kg",
+            "zh-TW": "+{value}% = 負重上限 {eval: 35 * (1 + value / 100)} 公斤"
+          }
+        },
+        "DayLength": {
+          "type": "int",
+          "widget": "slider",
+          "default": 30,
+          "min": 10,
+          "max": 120,
+          "step": 5,
+          "label": { "en": "Day length (minutes)", "zh-TW": "一天長度（分鐘）" },
+          "description": {
+            "en": "{value} min = {eval: value * 60} s of real time.",
+            "zh-TW": "{value} 分鐘 = 現實時間 {eval: value * 60} 秒。"
+          }
+        },
+        "HeatWarning": {
+          "type": "int",
+          "default": 95,
+          "min": 32,
+          "max": 140,
+          "label": { "en": "Heat warning (°F)", "zh-TW": "高溫警告（°F）" },
+          "description": {
+            "en": "{value} °F = {eval: (value - 32) * 5 / 9} °C",
+            "zh-TW": "{value} °F = {eval: (value - 32) * 5 / 9} °C"
+          }
+        }
+      }
+    }
+  }
+}

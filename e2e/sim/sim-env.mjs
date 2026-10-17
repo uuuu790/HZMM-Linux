@@ -145,13 +145,14 @@ export function buildSimEnv(home, repoRoot) {
   archives.loudMusic = path.join(modsIn, 'LoudMusic.zip');
   writeZip(archives.loudMusic, { 'LOUDMUSIC_P.PAK': pakV11(['HumanitZ/Content/Audio/Music.uasset']) });
 
-  // UE4SS Lua mod with a config schema (the docs widget demo)
-  const demo = path.join(repoRoot, 'docs/examples/full-widget-demo');
+  // UE4SS Lua mod with a config schema: the docs all-in-one example, laid
+  // out the way docs/examples/README.txt says to assemble it.
+  const demo = (suffix) => fs.readFileSync(path.join(repoRoot, 'docs/examples', `17-all-in-one.${suffix}`));
   archives.widgetDemo = path.join(modsIn, 'FullWidgetDemo.zip');
   writeZip(archives.widgetDemo, {
-    'FullWidgetDemo/Scripts/main.lua': fs.readFileSync(path.join(demo, 'Scripts/main.lua')),
-    'FullWidgetDemo/Scripts/config.lua': fs.readFileSync(path.join(demo, 'Scripts/config.lua')),
-    'FullWidgetDemo/hzmm.config.json': fs.readFileSync(path.join(demo, 'hzmm.config.json')),
+    'FullWidgetDemo/Scripts/main.lua': demo('main.lua'),
+    'FullWidgetDemo/Scripts/config.lua': demo('config.lua'),
+    'FullWidgetDemo/hzmm.config.json': demo('hzmm.config.json'),
   });
 
   // Windows-made zip: backslash entry names

@@ -1,0 +1,24 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "Hotkeys": {
+      "label": { "en": "Hotkeys", "zh-TW": "快速鍵" },
+      "keys": {
+        "ToggleKey": {
+          "type": "keybind",
+          "default": "F6",
+          "label": { "en": "Toggle overlay", "zh-TW": "切換介面" },
+          "description": {
+            "en": "Click, then press the key. Stored as UE4SS Key names: F6, Ctrl+T, Alt+ONE.",
+            "zh-TW": "點一下再按下按鍵。以 UE4SS Key 名稱儲存：F6、Ctrl+T、Alt+ONE。"
+          }
+        },
+        "TeleportKey": {
+          "type": "keybind",
+          "default": "Ctrl+NUM_ONE",
+          "label": { "en": "Teleport home", "zh-TW": "傳送回家" }
+        }
+      }
+    }
+  }
+}

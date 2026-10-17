@@ -1,0 +1,37 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "Lists": {
+      "label": { "en": "Lists", "zh-TW": "清單" },
+      "keys": {
+        "AllowedWeapons": {
+          "type": "multi-select",
+          "default": ["Pistol", "Rifle"],
+          "label": { "en": "Allowed weapons", "zh-TW": "允許的武器" },
+          "description": {
+            "en": "Pick any number of options. Written as a one-line Lua array in options order.",
+            "zh-TW": "可選多個。寫成單行 Lua 陣列，順序依照 options。"
+          },
+          "options": [
+            { "value": "Pistol" },
+            { "value": "Rifle" },
+            { "value": "Shotgun" },
+            { "value": "Bow" }
+          ]
+        },
+        "ActiveSlots": {
+          "type": "multi-select",
+          "default": [1, 3],
+          "label": { "en": "Active slots", "zh-TW": "啟用的欄位" },
+          "description": { "en": "Number options are written bare: {1, 3}.", "zh-TW": "數字選項寫入時不加引號：{1, 3}。" },
+          "options": [
+            { "value": 1 },
+            { "value": 2 },
+            { "value": 3 },
+            { "value": 4 }
+          ]
+        }
+      }
+    }
+  }
+}

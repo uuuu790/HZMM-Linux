@@ -1,0 +1,53 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "General": {
+      "label": { "en": "General", "zh-TW": "一般" },
+      "enableKey": "Enabled",
+      "keys": {
+        "Enabled": {
+          "type": "bool",
+          "default": true,
+          "label": { "en": "Mod enabled", "zh-TW": "啟用模組" },
+          "description": {
+            "en": "Section master switch (enableKey): turn it off and the rows below are greyed out.",
+            "zh-TW": "區段總開關（enableKey）：關閉時下面的欄位會變暗停用。"
+          }
+        },
+        "Speed": {
+          "type": "int",
+          "default": 5,
+          "min": 1,
+          "max": 10,
+          "label": { "en": "Speed", "zh-TW": "速度" }
+        },
+        "Volume": {
+          "type": "float",
+          "widget": "slider",
+          "default": 0.8,
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.1,
+          "label": { "en": "Volume", "zh-TW": "音量" }
+        }
+      }
+    },
+    "Advanced": {
+      "label": { "en": "Advanced", "zh-TW": "進階" },
+      "collapsed": true,
+      "keys": {
+        "TickRate": {
+          "type": "int",
+          "default": 10,
+          "min": 1,
+          "max": 60,
+          "label": { "en": "Tick rate", "zh-TW": "更新頻率" },
+          "description": {
+            "en": "This section starts collapsed (collapsed: true).",
+            "zh-TW": "這個區段預設是收合的（collapsed: true）。"
+          }
+        }
+      }
+    }
+  }
+}

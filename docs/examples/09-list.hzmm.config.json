@@ -1,0 +1,25 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "Lists": {
+      "label": { "en": "Lists", "zh-TW": "清單" },
+      "keys": {
+        "FriendNames": {
+          "type": "list",
+          "default": ["Alice", "Bob"],
+          "label": { "en": "Friends", "zh-TW": "好友名單" },
+          "description": {
+            "en": "The player types the entries: + adds one, × removes one.",
+            "zh-TW": "由玩家自行輸入：+ 新增一筆，× 移除一筆。"
+          }
+        },
+        "BannedPlayers": {
+          "type": "list",
+          "default": [],
+          "label": { "en": "Banned players", "zh-TW": "封鎖名單" },
+          "description": { "en": "Can start empty: {}.", "zh-TW": "可以是空的：{}。" }
+        }
+      }
+    }
+  }
+}

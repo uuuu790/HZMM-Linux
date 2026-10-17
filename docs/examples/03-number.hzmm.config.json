@@ -1,0 +1,30 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "Numbers": {
+      "label": { "en": "Numbers", "zh-TW": "數值" },
+      "keys": {
+        "MaxHealth": {
+          "type": "int",
+          "default": 100,
+          "min": 1,
+          "max": 9999,
+          "label": { "en": "Max health", "zh-TW": "最大生命值" },
+          "description": {
+            "en": "Whole numbers only, clamped to 1-9999 when the box loses focus.",
+            "zh-TW": "只能輸入整數，離開欄位時會限制在 1-9999。"
+          }
+        },
+        "SpawnRate": {
+          "type": "float",
+          "default": 1.0,
+          "label": { "en": "Spawn rate", "zh-TW": "生成倍率" },
+          "description": {
+            "en": "Float without min / max. Text that is not a number reverts.",
+            "zh-TW": "沒有 min / max 的小數。輸入非數字會還原。"
+          }
+        }
+      }
+    }
+  }
+}

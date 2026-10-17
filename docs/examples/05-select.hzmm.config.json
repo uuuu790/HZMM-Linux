@@ -1,0 +1,45 @@
+{
+  "configFile": "Scripts/config.lua",
+  "sections": {
+    "Choices": {
+      "label": { "en": "Choices", "zh-TW": "選項" },
+      "keys": {
+        "Difficulty": {
+          "type": "select",
+          "default": "Normal",
+          "label": { "en": "Difficulty", "zh-TW": "難度" },
+          "description": { "en": "Three or more options render as a dropdown.", "zh-TW": "三個以上選項會顯示成下拉選單。" },
+          "options": [
+            { "value": "Easy" },
+            { "value": "Normal" },
+            { "value": "Hard" }
+          ]
+        },
+        "LootMode": {
+          "type": "select",
+          "default": "Solo",
+          "label": { "en": "Loot mode", "zh-TW": "拾取模式" },
+          "description": { "en": "Two options render as pills.", "zh-TW": "兩個選項會顯示成按鈕。" },
+          "options": [
+            { "value": "Solo" },
+            { "value": "Shared" }
+          ]
+        },
+        "HudScale": {
+          "type": "select",
+          "default": 1,
+          "label": { "en": "HUD scale", "zh-TW": "HUD 縮放" },
+          "description": {
+            "en": "Every option is a number, so the value is written without quotes.",
+            "zh-TW": "選項全是數字，所以寫入時不加引號。"
+          },
+          "options": [
+            { "value": 1 },
+            { "value": 2 },
+            { "value": 3 }
+          ]
+        }
+      }
+    }
+  }
+}

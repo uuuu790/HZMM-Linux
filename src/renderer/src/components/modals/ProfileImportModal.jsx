@@ -19,7 +19,7 @@ const ProfileImportModal = ({ isOpen, missing, auto, manual, allMissing, downloa
             {t.profileMissingTitle}
           </h3>
           {!downloading && (
-            <button onClick={onCancel} aria-label="Close" className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+            <button onClick={onCancel} aria-label={t.close} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
               <X className="w-4 h-4" />
             </button>
           )}

@@ -2,6 +2,8 @@ import { ipcMain, dialog, shell, type FileFilter, type IpcMainInvokeEvent } from
 import path from 'path'
 import configStore from '../services/config-store'
 import { isExecutableExt } from '../services/path-safety'
+import { mainText } from '../services/main-text'
+import { currentLocale } from './locale'
 import type { SettingsKey } from './types'
 
 // NOTE: several keys were removed after being confirmed unread across main +
@@ -47,11 +49,12 @@ function registerSettingsIpc(): void {
   })
 
   ipcMain.handle('dialog:select-files', async (_: IpcMainInvokeEvent, filters?: FileFilter[] | null) => {
+    const text = mainText(currentLocale())
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
       filters: filters || [
-        { name: 'Mod Files', extensions: ['zip', 'rar', '7z', 'pak'] },
-        { name: 'All Files', extensions: ['*'] }
+        { name: text.modFiles, extensions: ['zip', 'rar', '7z', 'pak'] },
+        { name: text.allFiles, extensions: ['*'] }
       ]
     })
     return result.canceled ? [] : result.filePaths

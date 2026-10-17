@@ -11,7 +11,7 @@ import { registerSavesIpc } from './ipc/saves'
 import { registerUe4ssIpc } from './ipc/ue4ss'
 import { registerGameIpc, startGameRunningPolling } from './ipc/game'
 import { registerSettingsIpc } from './ipc/settings'
-import { registerLocaleIpc } from './ipc/locale'
+import { registerLocaleIpc, currentLocale, onLocaleChange } from './ipc/locale'
 import { registerAppUpdateIpc } from './ipc/app-update'
 import { registerConflictsIpc } from './ipc/conflicts'
 import { registerNexusIpc } from './ipc/nexus'
@@ -21,6 +21,7 @@ import { cleanupStaleDownloadTemp } from './ipc/mods-download'
 import { cleanupStaleRollback } from './ipc/mods-install'
 import logger from './services/logger'
 import configStore from './services/config-store'
+import { mainText } from './services/main-text'
 
 const is = { dev: !app.isPackaged }
 
@@ -194,6 +195,11 @@ function createWindow(): void {
     defaultHeight: 800
   })
 
+  // The splash follows the saved mode from the first frame: the window
+  // background matches it, and the preload gets the mode as an argument.
+  // Linux fork defaults to dark (App.jsx reads darkMode with a true default),
+  // so only an explicit `false` gives the light splash.
+  const darkMode = configStore.get('darkMode', true) !== false
   mainWindow = new BrowserWindow({
     x: mainWindowState.x,
     y: mainWindowState.y,
@@ -210,7 +216,7 @@ function createWindow(): void {
     // with a matching backgroundColor avoids the white flash that
     // originally motivated `show: false`.
     show: true,
-    backgroundColor: '#020617',
+    backgroundColor: darkMode ? '#020617' : '#f8fafc',
     icon: ICON_PATH,
     frame: false,
     titleBarStyle: 'hidden',
@@ -221,6 +227,7 @@ function createWindow(): void {
     },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
+      additionalArguments: [`--hzmm-dark=${darkMode ? 1 : 0}`],
       // sandbox: true is Electron's secure default — it runs the renderer in an
       // OS-level sandbox so a renderer-side exploit (e.g. a Chromium bug) can't
       // directly touch the filesystem/OS. The preload only uses sandbox-safe
@@ -335,13 +342,11 @@ function createWindow(): void {
   }
 }
 
-function createTray(): void {
-  tray = new Tray(nativeImage.createFromPath(ICON_PATH))
-  tray.setToolTip('HZMM Manager')
-
-  const contextMenu = Menu.buildFromTemplate([
+function buildTrayMenu(): Menu {
+  const text = mainText(currentLocale())
+  return Menu.buildFromTemplate([
     {
-      label: '顯示 HZMM',
+      label: text.trayShow,
       click: () => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.show()
@@ -353,15 +358,20 @@ function createTray(): void {
     },
     { type: 'separator' },
     {
-      label: '結束',
+      label: text.trayQuit,
       click: () => {
         isQuitting = true
         app.quit()
       }
     }
   ])
+}
 
-  tray.setContextMenu(contextMenu)
+function createTray(): void {
+  tray = new Tray(nativeImage.createFromPath(ICON_PATH))
+  tray.setToolTip('HZMM Manager')
+  tray.setContextMenu(buildTrayMenu())
+  onLocaleChange(() => tray?.setContextMenu(buildTrayMenu()))
 
   // 點擊匣圖標 → 顯示視窗（若已銷毀則重新建立）
   tray.on('click', () => {

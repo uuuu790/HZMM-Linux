@@ -378,7 +378,8 @@ function BrowseUI({ t, lang, addToast, premiumName, isPremium, noKey, goToSettin
             <button
               onClick={() => setSearchQuery('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-600 flex items-center justify-center transition-colors"
-              title="Clear"
+              title={t.clear}
+              aria-label={t.clear}
             >
               <X className="w-3 h-3" />
             </button>
@@ -601,7 +602,7 @@ export default function NexusTab({ t, lang, addToast, setActiveTab }) {
         iconColor="bg-gradient-to-br from-slate-500 to-slate-700"
         title={t.nexusNetworkError}
         description={state.error || ''}
-        cta={<><RefreshCw className="w-4 h-4" /> Retry</>}
+        cta={<><RefreshCw className="w-4 h-4" /> {t.retry}</>}
         onCta={runValidate}
       />
     );

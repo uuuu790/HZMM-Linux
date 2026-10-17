@@ -29,7 +29,7 @@ export default function SteamWorkshopDetailModal({ item, t, onClose }) {
         <div className="relative h-44 sm:h-52 shrink-0 bg-gradient-to-br from-sky-500/30 to-indigo-600/30">
           {item.previewUrl && <img src={item.previewUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />}
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-          <button onClick={onClose} aria-label="Close" className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-colors">
+          <button onClick={onClose} aria-label={t.close} className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-colors">
             <X className="w-5 h-5" />
           </button>
           <h2 className="absolute bottom-4 left-6 right-6 text-2xl font-black text-white drop-shadow-lg line-clamp-2">{item.title}</h2>

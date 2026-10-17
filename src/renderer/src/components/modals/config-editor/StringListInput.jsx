@@ -2,13 +2,21 @@ import { Plus, X } from 'lucide-react';
 import { parseLuaArray, serializeLuaArray } from '../../../utils/config-parser';
 
 // Free-form list of strings (no schema-defined options). Each entry has
-// its own row with a text input and a delete button; "+ 新增" appends a
+// its own row with a text input and a delete button; "+ Add" appends a
 // blank entry.
 //
 // Storage: same Lua array literal as MultiSelectInput (`{"a","b"}`),
 // serialized via parseLuaArray / serializeLuaArray.
 
-export default function StringListInput({ value, disabled, onChange }) {
+// UI text. ConfigEditorModal passes the localized strings; these English
+// fallbacks only show when the widget is mounted without them.
+export const DEFAULT_STRING_LIST_TEXT = {
+  empty: 'empty',
+  add: 'Add',
+  remove: 'Remove',
+};
+
+export default function StringListInput({ value, disabled, onChange, text = DEFAULT_STRING_LIST_TEXT }) {
   const items = parseLuaArray(value) || [];
 
   const replace = (next) => onChange(serializeLuaArray(next));
@@ -19,7 +27,7 @@ export default function StringListInput({ value, disabled, onChange }) {
   return (
     <div className={`flex flex-col gap-1 w-full ${disabled ? 'pointer-events-none' : ''}`}>
       {items.length === 0 && (
-        <p className="text-[10px] text-slate-400 dark:text-slate-500 italic text-center py-1">empty</p>
+        <p className="text-[10px] text-slate-400 dark:text-slate-500 italic text-center py-1">{text.empty}</p>
       )}
       {items.map((item, i) => (
         <div key={i} className="flex items-center gap-1">
@@ -35,7 +43,8 @@ export default function StringListInput({ value, disabled, onChange }) {
             type="button"
             onClick={() => removeItem(i)}
             disabled={disabled}
-            title="Remove"
+            title={text.remove}
+            aria-label={text.remove}
             className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 active:scale-90 transition-all"
           >
             <X className="w-3 h-3" />
@@ -49,7 +58,7 @@ export default function StringListInput({ value, disabled, onChange }) {
         className="w-full inline-flex items-center justify-center gap-1 py-1 text-[11px] font-bold rounded-md text-slate-500 dark:text-slate-400 bg-slate-100/70 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-700 border border-dashed border-slate-300 dark:border-slate-600 active:scale-95 transition-all"
       >
         <Plus className="w-3 h-3" />
-        新增
+        {text.add}
       </button>
     </div>
   );

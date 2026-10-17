@@ -175,7 +175,7 @@ const ModDetailModal = ({ isOpen, mod, onClose, onOpenConfig, t, lang }) => {
               </span>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close" className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-90 shrink-0">
+          <button onClick={onClose} aria-label={t.close} className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-90 shrink-0">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -186,7 +186,7 @@ const ModDetailModal = ({ isOpen, mod, onClose, onOpenConfig, t, lang }) => {
           {/* Hybrid links */}
           {mod.hybrid && mod.linkedPaks && (
             <div>
-              <h4 className="text-[10px] font-bold text-orange-500 dark:text-orange-400 uppercase tracking-widest mb-1.5">Linked PAK</h4>
+              <h4 className="text-[10px] font-bold text-orange-500 dark:text-orange-400 uppercase tracking-widest mb-1.5">{t.linkedPak}</h4>
               <div className="flex flex-wrap gap-1.5">
                 {mod.linkedPaks.map(pak => (
                   <div key={pak} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-50/80 dark:bg-orange-900/10 border border-orange-200/50 dark:border-orange-800/30">
@@ -199,7 +199,7 @@ const ModDetailModal = ({ isOpen, mod, onClose, onOpenConfig, t, lang }) => {
           )}
           {mod.hybrid && mod.linkedUe4ss && (
             <div>
-              <h4 className="text-[10px] font-bold text-orange-500 dark:text-orange-400 uppercase tracking-widest mb-1.5">Linked UE4SS</h4>
+              <h4 className="text-[10px] font-bold text-orange-500 dark:text-orange-400 uppercase tracking-widest mb-1.5">{t.linkedUe4ss}</h4>
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-50/80 dark:bg-orange-900/10 border border-orange-200/50 dark:border-orange-800/30 w-fit">
                 <Puzzle className="w-3 h-3 text-orange-500" />
                 <span className="text-[11px] font-mono font-medium text-orange-700 dark:text-orange-300">{mod.linkedUe4ss}</span>

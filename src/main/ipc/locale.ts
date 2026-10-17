@@ -41,23 +41,33 @@ function detectLocale(): string {
   return DEFAULT_LOCALE
 }
 
+// The UI language: the saved preference, else the OS locale.
+function currentLocale(): string {
+  const saved = configStore.get('lang')
+  if (saved && SUPPORTED_CODES.has(saved)) return saved
+  return detectLocale()
+}
+
+// Main-process text (tray menu) re-renders when the user switches language.
+const localeListeners: Array<(code: string) => void> = []
+function onLocaleChange(listener: (code: string) => void): void {
+  localeListeners.push(listener)
+}
+
 function registerLocaleIpc(): void {
   ipcMain.handle('locale:get-supported', () => {
     return SUPPORTED_LOCALES
   })
 
-  ipcMain.handle('locale:get-preference', () => {
-    const saved = configStore.get('lang')
-    if (saved && SUPPORTED_CODES.has(saved)) return saved
-    return detectLocale()
-  })
+  ipcMain.handle('locale:get-preference', () => currentLocale())
 
   ipcMain.handle('locale:set-preference', (_: IpcMainInvokeEvent, code: unknown) => {
     if (typeof code !== 'string' || !SUPPORTED_CODES.has(code)) return false
     configStore.set('lang', code)
     logger.info(`Language changed to: ${code}`)
+    for (const listener of localeListeners) listener(code)
     return true
   })
 }
 
-export { registerLocaleIpc }
+export { registerLocaleIpc, currentLocale, onLocaleChange }

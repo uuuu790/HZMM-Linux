@@ -1,6 +1,59 @@
 import { contextBridge, ipcRenderer, webUtils, webFrame, type IpcRendererEvent } from 'electron'
 import type { HzmmApi, IpcEventMap, IpcInvokeMap } from './api'
 
+// Splash (index.html) in the user's look from the first frame. This runs
+// before the page is parsed: the mode comes from the main process
+// (--hzmm-dark, from config), theme colours and language from what App.jsx
+// stored last session. Every value is pattern-checked or looked up before it
+// reaches CSS; anything missing or odd keeps the splash defaults.
+const SPLASH_STATUS: Record<string, string> = {
+  'zh-TW': '正在載入模組…',
+  en: 'Loading mods…',
+  ja: 'MODを読み込んでいます…',
+  ko: '모드를 불러오는 중…',
+  ru: 'Загрузка модов…',
+  de: 'Mods werden geladen…',
+  fr: 'Chargement des mods…'
+}
+
+// The splash droplets' orange shades, hue-rotated the way CSS hue-rotate()
+// would (Filter Effects matrix, sRGB), so they match the hue-rotated clip
+// without a filter pass of their own.
+const DRIP_SHADES: [number, number, number, number][] = [
+  [0xff, 0xd6, 0xb0, 1], [0xf7, 0x77, 0x2a, 1], [0xe3, 0x45, 0x2a, 1], [0xc9, 0x2a, 0x20, 1], [120, 20, 10, 0.35]
+]
+
+function hueRotated([r, g, b, a]: [number, number, number, number], deg: number): string {
+  const c = Math.cos(deg * Math.PI / 180)
+  const s = Math.sin(deg * Math.PI / 180)
+  const ch = (v: number) => Math.round(Math.min(255, Math.max(0, v)))
+  const R = (0.213 + 0.787 * c - 0.213 * s) * r + (0.715 - 0.715 * c - 0.715 * s) * g + (0.072 - 0.072 * c + 0.928 * s) * b
+  const G = (0.213 - 0.213 * c + 0.143 * s) * r + (0.715 + 0.285 * c + 0.140 * s) * g + (0.072 - 0.072 * c - 0.283 * s) * b
+  const B = (0.213 - 0.213 * c - 0.787 * s) * r + (0.715 - 0.715 * c + 0.715 * s) * g + (0.072 + 0.928 * c + 0.072 * s) * b
+  return `rgba(${ch(R)},${ch(G)},${ch(B)},${a})`
+}
+
+function paintSplash(): void {
+  const vars: string[] = []
+  if (process.argv.includes('--hzmm-dark=0')) vars.push('--s-bg:#f8fafc', '--s-muted:#94a3b8')
+  try {
+    const s = JSON.parse(localStorage.getItem('hzmm.splash') || 'null') as Record<string, unknown> | null
+    const ok = (v: unknown, re: RegExp): v is string => typeof v === 'string' && re.test(v)
+    const hex = /^#[0-9a-f]{6}$/i
+    if (s) {
+      if (ok(s.accent, /^\d{1,3},\s?\d{1,3},\s?\d{1,3}$/)) vars.push(`--s-accent:${s.accent}`)
+      if (ok(s.from, hex) && ok(s.to, hex)) vars.push(`--s-from:${s.from}`, `--s-to:${s.to}`)
+      if (ok(s.hue, /^-?\d+(\.\d+)?deg$/)) {
+        vars.push(`--s-hue:${s.hue}`)
+        DRIP_SHADES.forEach((shade, i) => vars.push(`--drip-${i + 1}:${hueRotated(shade, parseFloat(s.hue as string))}`))
+      }
+      if (typeof s.lang === 'string' && Object.hasOwn(SPLASH_STATUS, s.lang)) vars.push(`--s-status:"${SPLASH_STATUS[s.lang]}"`)
+    }
+  } catch { /* storage unavailable or corrupt */ }
+  if (vars.length) webFrame.insertCSS(`:root{${vars.join(';')}}`)
+}
+paintSplash()
+
 // ipcRenderer.invoke with the channel's argument / result types from the
 // window.api contract (api.d.ts).
 function invoke<C extends keyof IpcInvokeMap>(

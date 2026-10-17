@@ -86,7 +86,7 @@ const LoadOrderModal = ({ isOpen, onClose, pakMods, conflicts, onApply, applying
           <h3 id="load-order-modal-title" className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <ArrowDownUp className="w-5 h-5 text-sky-500" /> {t.loadOrder || 'Load order'}
           </h3>
-          <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+          <button onClick={onClose} aria-label={t.close} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>

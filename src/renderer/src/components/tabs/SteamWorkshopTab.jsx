@@ -58,7 +58,7 @@ export default function SteamWorkshopTab({ t }) {
             className="w-full pl-11 pr-10 py-2.5 rounded-full bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400/50"
           />
           {search && (
-            <button onClick={() => setSearch('')} aria-label="Clear" className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+            <button onClick={() => setSearch('')} aria-label={t.clear} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
               <X className="w-4 h-4" />
             </button>
           )}
@@ -109,11 +109,11 @@ export default function SteamWorkshopTab({ t }) {
 
           {/* Pagination */}
           <div className="flex items-center justify-center gap-4 mt-8">
-            <button disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria-label="Previous" className="w-10 h-10 rounded-full bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-white/10 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-sky-50 dark:hover:bg-slate-700">
+            <button disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria-label={t.previousPage} className="w-10 h-10 rounded-full bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-white/10 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-sky-50 dark:hover:bg-slate-700">
               <ChevronLeft className="w-5 h-5" />
             </button>
             <span className="text-sm font-bold text-slate-500 tabular-nums">{page}</span>
-            <button disabled={!hasNext} onClick={() => setPage((p) => p + 1)} aria-label="Next" className="w-10 h-10 rounded-full bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-white/10 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-sky-50 dark:hover:bg-slate-700">
+            <button disabled={!hasNext} onClick={() => setPage((p) => p + 1)} aria-label={t.nextPage} className="w-10 h-10 rounded-full bg-white/70 dark:bg-slate-800/70 border border-slate-200 dark:border-white/10 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:bg-sky-50 dark:hover:bg-slate-700">
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>

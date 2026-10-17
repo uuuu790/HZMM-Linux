@@ -20,6 +20,14 @@ export const DEFAULT_READONLY_TEXT = {
   note: "Their value spans several lines, shares its line with another setting, or is code, so HZMM can't rewrite it safely. To change one, edit the config file directly.",
 };
 
+// The row's own control tooltips. Same pattern: ConfigEditorModal passes
+// the localized strings in readonlyText.row.
+export const DEFAULT_ROW_TEXT = {
+  resetDefault: 'Reset to default ({value})',
+  enable: 'Enable — write to config.lua',
+  disable: 'Disable — remove from config.lua',
+};
+
 // id of the editor's single read-only note; each read-only value points its
 // aria-describedby at it instead of repeating the explanation per row. The
 // renderers show the note whenever they render a read-only row.
@@ -123,6 +131,7 @@ export default function SchemaRow({
   modFilename,
   addToast,
 }) {
+  const rowText = { ...DEFAULT_ROW_TEXT, ...readonlyText.row };
   const toggleDisabled = readonly || sectionGated;
   const handleToggleOptional = () => {
     if (toggleDisabled) return;
@@ -174,7 +183,7 @@ export default function SchemaRow({
       {canReset && (
         <button
           type="button"
-          title={`Reset to default (${defaultStr})`}
+          title={rowText.resetDefault.split('{value}').join(defaultStr)}
           disabled={widgetDisabled}
           onClick={() => update(defaultStr)}
           className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-90 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-all duration-200"
@@ -185,7 +194,7 @@ export default function SchemaRow({
 
       {keyDef.openPath && (
         <fieldset disabled={sectionGated} className="shrink-0 min-w-0">
-          <OpenPathButton modFilename={modFilename} spec={keyDef.openPath} addToast={addToast} />
+          <OpenPathButton modFilename={modFilename} spec={keyDef.openPath} addToast={addToast} text={readonlyText.openPath} />
         </fieldset>
       )}
 
@@ -195,7 +204,7 @@ export default function SchemaRow({
           onClick={handleToggleOptional}
           disabled={toggleDisabled}
           aria-pressed={isPresent}
-          title={isPresent ? 'Disable — remove from config.lua' : 'Enable — write to config.lua'}
+          title={isPresent ? rowText.disable : rowText.enable}
           className={`shrink-0 relative inline-flex h-5 w-9 items-center rounded-full transition-all duration-300 focus:outline-none shadow-inner border border-black/5 dark:border-white/5 active:scale-90 disabled:pointer-events-none ${readonly && !sectionGated ? 'opacity-40' : ''} ${!isPresent ? 'bg-slate-300 dark:bg-slate-700 hover:bg-slate-400 dark:hover:bg-slate-600' : ''}`}
           style={isPresent ? { backgroundColor: 'var(--accent-500)' } : undefined}
         >
@@ -259,6 +268,7 @@ export default function SchemaRow({
             value={currentValue}
             disabled={widgetDisabled}
             onChange={update}
+            text={readonlyText.stringList}
           />
         ) : options ? (
           // 2 options or fewer fit nicely as side-by-side pills.

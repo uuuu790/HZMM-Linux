@@ -3,12 +3,12 @@ import { Package, Puzzle, FileText, CheckCircle, RefreshCw, X, Folder, AlertTria
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 const TYPE_LABELS = {
-  'pak-only': { label: 'PAK Resource Mod', icon: Package, color: 'text-indigo-500' },
-  'ue4ss-mod': { label: 'UE4SS Script Mod', icon: Puzzle, color: 'text-emerald-500' },
-  'hybrid': { label: 'PAK + UE4SS Hybrid', icon: Puzzle, color: 'text-orange-500' },
-  'game-structure': { label: 'Game Structure Mod', icon: Folder, color: 'text-amber-500' },
-  'complex': { label: 'Complex Mod', icon: FileText, color: 'text-violet-500' },
-  'unknown': { label: 'Unknown', icon: FileText, color: 'text-slate-500' },
+  'pak-only': { labelKey: 'modTypePak', icon: Package, color: 'text-indigo-500' },
+  'ue4ss-mod': { labelKey: 'modTypeUe4ss', icon: Puzzle, color: 'text-emerald-500' },
+  'hybrid': { labelKey: 'modTypeHybrid', icon: Puzzle, color: 'text-orange-500' },
+  'game-structure': { labelKey: 'modTypeGameStructure', icon: Folder, color: 'text-amber-500' },
+  'complex': { labelKey: 'modTypeComplex', icon: FileText, color: 'text-violet-500' },
+  'unknown': { labelKey: 'modTypeUnknown', icon: FileText, color: 'text-slate-500' },
 };
 
 const PreviewModal = ({ isOpen, onClose, previews, loading, onConfirm, onDontShowAgain, t }) => {
@@ -29,7 +29,7 @@ const PreviewModal = ({ isOpen, onClose, previews, loading, onConfirm, onDontSho
             <Package className="w-5 h-5" style={{ color: 'var(--accent-500)' }} />
             {t.previewTitle || 'Install Preview'}
           </h3>
-          <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+          <button onClick={onClose} aria-label={t.close} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -52,7 +52,7 @@ const PreviewModal = ({ isOpen, onClose, previews, loading, onConfirm, onDontSho
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">{preview.fileName}</p>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                          {t.previewType || 'Type'}: <span className={`font-bold ${typeInfo.color}`}>{typeInfo.label}</span>
+                          {t.previewType || 'Type'}: <span className={`font-bold ${typeInfo.color}`}>{t[typeInfo.labelKey]}</span>
                         </p>
                         {preview.mods && preview.mods.length > 0 && (
                           <div className="flex flex-col gap-1 mt-2">

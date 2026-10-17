@@ -11,9 +11,11 @@ import { prepareEntriesForSave, resetEntriesToDefaults, entriesAtDefaults, norma
 import { TOAST_LONG_DURATION_MS } from '../../hooks/useToast';
 import SchemaRenderer from './config-editor/SchemaRenderer';
 import CommentModeRenderer from './config-editor/CommentModeRenderer';
-import { DEFAULT_READONLY_TEXT } from './config-editor/SchemaRow';
+import { DEFAULT_READONLY_TEXT, DEFAULT_ROW_TEXT } from './config-editor/SchemaRow';
 import { DEFAULT_KEYBIND_TEXT } from './config-editor/KeybindInput';
 import { DEFAULT_MULTI_SELECT_TEXT } from './config-editor/MultiSelectInput';
+import { DEFAULT_STRING_LIST_TEXT } from './config-editor/StringListInput';
+import { DEFAULT_OPEN_PATH_TEXT } from './config-editor/OpenPathButton';
 
 // Config editor modal — orchestrates schema-driven vs comment-driven rendering.
 // Parsing / serialization lives in utils/config-parser; the two render modes
@@ -116,7 +118,7 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
   const searchActive = !!searchQuery.trim();
 
   // Read-only row strings (pill, its tooltip, the one note at the top), plus
-  // the keybind and multi-select widgets' strings — the renderers hand this
+  // the row widgets' and row controls' strings — the renderers hand this
   // bundle to every row unchanged.
   const readonlyText = useMemo(() => ({
     badge: t.configReadonlyBadge || DEFAULT_READONLY_TEXT.badge,
@@ -131,6 +133,23 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
     multiSelect: {
       none: t.configMultiSelectNone || DEFAULT_MULTI_SELECT_TEXT.none,
       count: t.configMultiSelectCount || DEFAULT_MULTI_SELECT_TEXT.count,
+    },
+    stringList: {
+      empty: t.configListEmpty || DEFAULT_STRING_LIST_TEXT.empty,
+      add: t.configListAdd || DEFAULT_STRING_LIST_TEXT.add,
+      remove: t.configListRemove || DEFAULT_STRING_LIST_TEXT.remove,
+    },
+    openPath: {
+      openFile: t.configOpenFile || DEFAULT_OPEN_PATH_TEXT.openFile,
+      reveal: t.configRevealInFolder || DEFAULT_OPEN_PATH_TEXT.reveal,
+      notFound: t.configFileNotFound || DEFAULT_OPEN_PATH_TEXT.notFound,
+      cannotOpen: t.configCannotOpen || DEFAULT_OPEN_PATH_TEXT.cannotOpen,
+      openFailed: t.configOpenFailed || DEFAULT_OPEN_PATH_TEXT.openFailed,
+    },
+    row: {
+      resetDefault: t.configResetDefault || DEFAULT_ROW_TEXT.resetDefault,
+      enable: t.configOptionalEnable || DEFAULT_ROW_TEXT.enable,
+      disable: t.configOptionalDisable || DEFAULT_ROW_TEXT.disable,
     },
   }), [t]);
 
@@ -395,7 +414,7 @@ const ConfigEditorModal = ({ isOpen, mod, onClose, t, lang, addToast }) => {
             <h3 id="config-editor-modal-title" className="text-base font-black text-slate-800 dark:text-white tracking-tight truncate">{t.configEditor}</h3>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium truncate">{cleanModName(mod?.customName || mod?.title || mod?.filename || '')}</p>
           </div>
-          <button onClick={onClose} aria-label="Close" className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-90">
+          <button onClick={onClose} aria-label={t.close} className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-90">
             <X className="w-5 h-5" />
           </button>
         </div>

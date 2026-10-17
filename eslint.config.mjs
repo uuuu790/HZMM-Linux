@@ -108,6 +108,15 @@ export default [
     },
   },
 
+  // Renderer static scripts (public/, loaded as plain <script>) — browser globals
+  {
+    files: ['src/renderer/public/**/*.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: { ...globals.browser },
+    },
+  },
+
   // Config files — allow require/module
   {
     files: ['*.config.js', '*.config.mjs', 'eslint.config.js'],

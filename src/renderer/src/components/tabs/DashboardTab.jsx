@@ -1,7 +1,8 @@
 import { Puzzle, Package, AlertTriangle, DownloadCloud, RefreshCw, CheckCircle, UploadCloud, ArrowUpCircle, ShieldCheck, Save, ChevronRight } from 'lucide-react'
 import AnimatedNumber from '../common/AnimatedNumber'
 
-const STAT_CARD = 'group w-full bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200 dark:border-white/10 rounded-full py-3.5 px-5 md:px-6 shadow-sm flex items-center transition-all duration-500 hover:shadow-md hover:-translate-y-0.5 hover:border-[rgba(var(--accent-rgb),0.35)] active:scale-[0.99]'
+// No backdrop-filter on cards in the scroller: see GlassCard.
+const STAT_CARD = 'group w-full bg-white/60 dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-full py-3.5 px-5 md:px-6 shadow-sm flex items-center transition-all duration-500 hover:shadow-md hover:-translate-y-0.5 hover:border-[rgba(var(--accent-rgb),0.35)] active:scale-[0.99]'
 
 const TONES = {
   sky: { chip: 'bg-sky-100 dark:bg-sky-900/40 text-sky-500 dark:text-sky-400' },
@@ -53,7 +54,7 @@ export default function DashboardTab({
 
       {/* UE4SS Engine Status */}
       <div className={`
-        relative overflow-hidden backdrop-blur-xl border rounded-full py-4 px-6 md:px-8 flex items-center gap-5 shadow-sm transition-all duration-700 hover:shadow-md hover:-translate-y-0.5
+        relative overflow-hidden border rounded-full py-4 px-6 md:px-8 flex items-center gap-5 shadow-sm transition-all duration-700 hover:shadow-md hover:-translate-y-0.5
         ${isProcessing ? '' :
           ue4ssStatus === 'uninstalled' ? 'bg-white/60 dark:bg-slate-900/60 border-slate-200 dark:border-white/10' :
           ue4ssStatus === 'update' ? 'bg-amber-50/80 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/50' :

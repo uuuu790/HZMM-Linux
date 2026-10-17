@@ -28,22 +28,15 @@ export const APP_STYLES = `
     50% { transform: scale(1.02) translateY(-2px); }
     100% { opacity: 1; transform: scale(1) translateY(0); }
   }
-  @keyframes orbFloat1 {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    25% { transform: translate(3vw, -2vh) scale(1.05); }
-    50% { transform: translate(-1vw, 3vh) scale(0.95); }
-    75% { transform: translate(-3vw, -1vh) scale(1.03); }
-  }
-  @keyframes orbFloat2 {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    33% { transform: translate(-4vw, 2vh) scale(1.04); }
-    66% { transform: translate(2vw, -3vh) scale(0.97); }
-  }
-  @keyframes orbFloat3 {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    20% { transform: translate(2vw, 3vh) scale(1.06); }
-    60% { transform: translate(-3vw, -2vh) scale(0.96); }
-    80% { transform: translate(1vw, 1vh) scale(1.02); }
+  /* Sine-ish breath in four segments; each segment is stepped (see
+     .ambient-key) so the glass above repaints a few times a second, not
+     every frame. */
+  @keyframes ambientBreath {
+    0% { opacity: 0.78; }
+    25% { opacity: 0.84; }
+    50% { opacity: 0.92; }
+    75% { opacity: 0.98; }
+    100% { opacity: 1; }
   }
   @keyframes shimmerSweep {
     0% { transform: translateX(-100%); }
@@ -150,10 +143,43 @@ export const APP_STYLES = `
   .animate-tab-enter { animation: tabFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
   .animate-tab-left { animation: tabSlideLeft 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
   .animate-tab-right { animation: tabSlideRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-  .orb-float-1 { animation: orbFloat1 25s ease-in-out infinite; }
-  .orb-float-2 { animation: orbFloat2 30s ease-in-out infinite; }
-  .orb-float-3 { animation: orbFloat3 22s ease-in-out infinite; }
-  .orb-float-4 { animation: orbFloat2 28s ease-in-out infinite reverse; }
+  /* ---- Ambient light (App.jsx background) ----
+     One light source, as dark-UI practice suggests: a wide, shallow pool
+     of the theme colour falling from above the content area onto a plain
+     base, faint enough that it reads as light rather than as a gradient.
+     No blurred discs (160-250px filter blurs get downsampled by Chromium
+     and band into vertical stripes), no extra spots or beams. It only
+     breathes, slowly; a fine static grain keeps the long falloff from
+     banding. The colour follows the theme (--orb-*-1) and cross-fades on
+     theme / mode changes through the registered property. */
+  @property --amb-1 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+  .ambient-light {
+    --amb-1: var(--orb-light-1);
+    transition: --amb-1 1s ease;
+  }
+  .dark .ambient-light { --amb-1: var(--orb-dark-1); }
+  /* Centre above the top edge, over the content column (the sidebar takes
+     the left); Gaussian-ish falloff from several stops, not a linear ramp. */
+  .ambient-key {
+    position: absolute;
+    left: 2vw; top: -62vh; width: 112vw; height: 120vh;
+    background: radial-gradient(closest-side, var(--amb-1), color-mix(in srgb, var(--amb-1) 76%, transparent) 30%, color-mix(in srgb, var(--amb-1) 44%, transparent) 55%, color-mix(in srgb, var(--amb-1) 16%, transparent) 78%, transparent);
+    will-change: opacity;
+    /* 4 x 14s segments, 56 steps each: four repaints a second. */
+    animation: ambientBreath 56s steps(56, jump-none) infinite alternate;
+  }
+  /* Mid-grey noise (generated in sRGB so it centres on 0.5) under
+     soft-light: grain only, no overall lift. It sits outside .ambient-light
+     (App.jsx) because that layer is its own stacking context, where the
+     blend would only see the light and not the base colour beneath it. */
+  .ambient-grain {
+    opacity: 0.12;
+    mix-blend-mode: soft-light;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ambient-key { animation: none !important; }
+  }
   .shimmer-sweep::after {
     content: '';
     position: absolute;
@@ -162,10 +188,12 @@ export const APP_STYLES = `
     animation: shimmerSweep 1.2s ease-in-out infinite;
   }
   .logo-breath { animation: logoBreath 3s ease-in-out infinite; }
+  /* While the splash logo flies onto the sidebar slot (App.jsx), the real
+     one stays hidden so the two never show at once. */
+  .splash-handoff [data-app-logo] { opacity: 0; }
   /* Decorative loops freeze while the window is unfocused, hidden or idle
      (useAmbientMotion). !important beats inline animation shorthands. */
-  .ambient-paused .orb-float-1, .ambient-paused .orb-float-2,
-  .ambient-paused .orb-float-3, .ambient-paused .orb-float-4,
+  .ambient-paused .ambient-key,
   .ambient-paused .logo-breath, .ambient-paused .ambient-loop {
     animation-play-state: paused !important;
   }
@@ -281,18 +309,26 @@ export const APP_STYLES = `
      The element's backdrop-filter (refraction + blur + saturate) is set by
      the component; this is the material on top: a faint tint, a 1px glossy
      rim lit from the top-left, an inner top highlight, a soft lift shadow and
-     a specular spot that follows the pointer. The pseudo-elements sit at
+     a fixed top-left sheen (first background layer). The pointer lights the
+     glass edge rather than its face: while hovered, the rim brightens near
+     the pointer and a soft glow catches the inside of the edge there, as if
+     light ran along the glass's thickness (white in dark mode, the accent in
+     light mode, where white on white would not show). The pseudo-elements sit at
      z-index -1 inside the element's own stacking context (isolation), so
      they paint over the backdrop but under the content. No "position" here:
      these unlayered rules would beat Tailwind's "absolute" — every .lg
      element carries its own "relative" / "absolute" class. */
+  @property --lg-hot { syntax: '<number>'; inherits: true; initial-value: 0; }
   .lg {
     --lg-saturate: 1.8;
+    --lg-hot-rgb: var(--accent-rgb);
     --lg-tint: rgba(255, 255, 255, 0.22);
     --lg-rim: linear-gradient(140deg, rgba(255,255,255,0.95), rgba(255,255,255,0.25) 30%, rgba(255,255,255,0.08) 60%, rgba(255,255,255,0.55));
     --lg-spec: rgba(255, 255, 255, 0.35);
     isolation: isolate;
-    background: var(--lg-tint);
+    background:
+      radial-gradient(160px circle at 25% -40px, color-mix(in srgb, var(--lg-spec) 70%, transparent), transparent 70%),
+      var(--lg-tint);
     box-shadow:
       inset 0 1px 1px rgba(255, 255, 255, 0.65),
       inset 0 -6px 14px -10px rgba(255, 255, 255, 0.5),
@@ -301,6 +337,7 @@ export const APP_STYLES = `
   }
   .dark .lg {
     --lg-saturate: 1.6;
+    --lg-hot-rgb: 255, 255, 255;
     --lg-tint: rgba(255, 255, 255, 0.045);
     --lg-rim: linear-gradient(140deg, rgba(255,255,255,0.42), rgba(255,255,255,0.10) 30%, rgba(255,255,255,0.03) 60%, rgba(255,255,255,0.22));
     --lg-spec: rgba(255, 255, 255, 0.10);
@@ -317,21 +354,28 @@ export const APP_STYLES = `
     z-index: -1;
     border-radius: inherit;
     padding: 1px;
-    background: var(--lg-rim);
+    background:
+      radial-gradient(260px circle at var(--lg-x, -999px) var(--lg-y, -999px), rgba(var(--lg-hot-rgb), calc(0.95 * var(--lg-hot))), rgba(var(--lg-hot-rgb), calc(0.35 * var(--lg-hot))) 35%, transparent 75%),
+      var(--lg-rim);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
+    transition: --lg-hot 350ms ease;
     pointer-events: none;
   }
+  .lg:hover::before { --lg-hot: 1; }
+  /* Inner edge glow, shown only around the pointer. */
   .lg::after {
     content: '';
     position: absolute;
     inset: 0;
     z-index: -1;
     border-radius: inherit;
-    background: radial-gradient(160px circle at var(--lg-x, 25%) var(--lg-y, -40px), var(--lg-spec), transparent 70%);
-    opacity: 0.7;
-    transition: opacity 300ms ease;
+    box-shadow: inset 0 0 16px 1px rgba(var(--lg-hot-rgb), 0.22), inset 0 0 3px rgba(var(--lg-hot-rgb), 0.35);
+    -webkit-mask-image: radial-gradient(220px circle at var(--lg-x, -999px) var(--lg-y, -999px), #000, rgba(0, 0, 0, 0.35) 45%, transparent 75%);
+    mask-image: radial-gradient(220px circle at var(--lg-x, -999px) var(--lg-y, -999px), #000, rgba(0, 0, 0, 0.35) 45%, transparent 75%);
+    opacity: 0;
+    transition: opacity 350ms ease;
     pointer-events: none;
   }
   .lg:hover::after { opacity: 1; }
@@ -341,6 +385,7 @@ export const APP_STYLES = `
   .dark .lg.lg-menu { --lg-tint: rgba(15, 23, 42, 0.55); }
   /* Accent-tinted glass for the primary action (launch). */
   .lg.lg-tinted {
+    --lg-hot-rgb: 255, 255, 255;
     --lg-tint: linear-gradient(to right, rgba(var(--accent-rgb), 0.78), rgba(var(--accent-rgb), 0.58));
     --lg-rim: linear-gradient(140deg, rgba(255,255,255,0.9), rgba(255,255,255,0.2) 35%, rgba(255,255,255,0.05) 65%, rgba(255,255,255,0.45));
     --lg-spec: rgba(255, 255, 255, 0.35);
@@ -394,7 +439,16 @@ export const APP_STYLES = `
   .sidebar-nav input:checked + label svg {
     transform: scale(1.1);
   }
-  /* The selection is a glass capsule that springs between the items. */
+  /* The selection is a glass capsule that flows between the items like a
+     drop: the edge on the side it moves toward leaves first and lands with a
+     slight give, the far edge follows a beat behind, so the capsule stretches
+     by about a quarter of the distance in flight and settles back to one
+     item. Sidebar.jsx sets data-dir from the previous tab, which decides
+     which edge leads. --i is the item index. */
+  .sidebar-nav {
+    --glide-lead: 0.34s cubic-bezier(0.25, 1.1, 0.4, 1);
+    --glide-trail: 0.42s cubic-bezier(0.3, 0.7, 0.25, 1);
+  }
   .sidebar-nav .glider-container {
     position: absolute;
     inset: 0;
@@ -402,16 +456,27 @@ export const APP_STYLES = `
     pointer-events: none;
   }
   .sidebar-nav .glider-container .glider {
-    position: relative;
-    height: calc(100% / var(--total-radio));
-    width: 100%;
-    transition: transform 0.5s cubic-bezier(0.37, 1.95, 0.66, 0.56);
+    --i: 0;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--i) * 100% / var(--total-radio));
+    bottom: calc((var(--total-radio) - 1 - var(--i)) * 100% / var(--total-radio));
+    transition: top var(--glide-trail), bottom var(--glide-lead);
+  }
+  .sidebar-nav[data-dir="up"] .glider-container .glider {
+    transition: top var(--glide-lead), bottom var(--glide-trail);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar-nav .glider-container .glider { transition: none; }
   }
   .sidebar-nav .glider-container .glider::before {
     content: "";
     position: absolute;
     inset: 3px 0;
-    border-radius: 9999px;
+    /* Half the resting height, not 9999px: stretched in flight it stays a
+       capsule instead of ballooning into an oval. */
+    border-radius: 23px;
     background: linear-gradient(to bottom, rgba(var(--accent-rgb), 0.16), rgba(var(--accent-rgb), 0.08));
     box-shadow:
       inset 0 1px 1px rgba(255, 255, 255, 0.7),
@@ -450,12 +515,11 @@ export const APP_STYLES = `
     opacity: 1;
     translate: 0 -50%;
   }
-  .sidebar-nav input:nth-of-type(1):checked ~ .glider-container .glider { transform: translateY(0); }
-  .sidebar-nav input:nth-of-type(2):checked ~ .glider-container .glider { transform: translateY(100%); }
-  .sidebar-nav input:nth-of-type(3):checked ~ .glider-container .glider { transform: translateY(200%); }
-  .sidebar-nav input:nth-of-type(4):checked ~ .glider-container .glider { transform: translateY(300%); }
-  .sidebar-nav input:nth-of-type(5):checked ~ .glider-container .glider { transform: translateY(400%); }
-  .sidebar-nav input:nth-of-type(6):checked ~ .glider-container .glider { transform: translateY(500%); }
+  .sidebar-nav input:nth-of-type(2):checked ~ .glider-container .glider { --i: 1; }
+  .sidebar-nav input:nth-of-type(3):checked ~ .glider-container .glider { --i: 2; }
+  .sidebar-nav input:nth-of-type(4):checked ~ .glider-container .glider { --i: 3; }
+  .sidebar-nav input:nth-of-type(5):checked ~ .glider-container .glider { --i: 4; }
+  .sidebar-nav input:nth-of-type(6):checked ~ .glider-container .glider { --i: 5; }
 
   /* Tab container max-width spring. Only animate when viewport is wide enough
      for the 1600px Nexus width to actually differ from the 1152px (max-w-6xl)

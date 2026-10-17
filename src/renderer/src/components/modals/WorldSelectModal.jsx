@@ -65,7 +65,7 @@ const WorldSelectModal = ({ isOpen, onClose, worlds, loading, onConfirm, t }) =>
           </h3>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t.close}
             className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
           >
             <X className="w-4 h-4" />

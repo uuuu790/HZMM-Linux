@@ -182,9 +182,9 @@ function ProfilesTab({
                       else unknownMods.push({ filename, name: displayName });
                     }
                     const groups = [
-                      { label: 'UE4SS Mods', icon: Puzzle, mods: ue4ssMods, dotColor: '#34d399', iconColor: '#10b981' },
-                      { label: 'PAK Mods', icon: Box, mods: pakMods, dotColor: '#818cf8', iconColor: '#6366f1' },
-                      ...(unknownMods.length > 0 ? [{ label: t.unknown || 'Other', icon: Box, mods: unknownMods, dotColor: '#94a3b8', iconColor: '#64748b' }] : []),
+                      { label: t.profileGroupUe4ss, icon: Puzzle, mods: ue4ssMods, dotColor: '#34d399', iconColor: '#10b981' },
+                      { label: t.profileGroupPak, icon: Box, mods: pakMods, dotColor: '#818cf8', iconColor: '#6366f1' },
+                      ...(unknownMods.length > 0 ? [{ label: t.profileGroupOther, icon: Box, mods: unknownMods, dotColor: '#94a3b8', iconColor: '#64748b' }] : []),
                     ].filter(g => g.mods.length > 0);
 
                     return (

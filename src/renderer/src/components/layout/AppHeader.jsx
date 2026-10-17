@@ -55,7 +55,9 @@ export default function AppHeader({
       style={{ transition: 'max-width 500ms cubic-bezier(0.34, 1.56, 0.64, 1)' }}
     >
       <h2 className="text-2xl font-light text-slate-600 dark:text-slate-400 tracking-wide flex items-center gap-3 transition-colors duration-700">
-        <span className="text-slate-400 dark:text-slate-500 font-bold">HZMM</span>
+        {/* elementtiming: public/splash.js waits for this to reach the screen,
+            i.e. for the interface's first paint, before starting its droplets */}
+        <span elementtiming="hzmm-ui" className="text-slate-400 dark:text-slate-500 font-bold">HZMM</span>
         <span className="text-slate-300 dark:text-slate-600">/</span>
         <span className="font-bold text-slate-800 dark:text-slate-200">
           {tabTitle}
@@ -106,24 +108,24 @@ export default function AppHeader({
             <button
               onClick={() => window.api?.window?.minimize()}
               className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 transition-colors duration-200"
-              title="Minimize"
-              aria-label="Minimize"
+              title={t.windowMinimize}
+              aria-label={t.windowMinimize}
             >
               <Minus className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => window.api?.window?.maximize()}
               className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 transition-colors duration-200"
-              title="Maximize"
-              aria-label="Maximize"
+              title={t.windowMaximize}
+              aria-label={t.windowMaximize}
             >
               <Square className="w-3 h-3" />
             </button>
             <button
               onClick={() => window.api?.window?.close()}
               className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-rose-500 hover:text-white transition-colors duration-200"
-              title="Close"
-              aria-label="Close"
+              title={t.close}
+              aria-label={t.close}
             >
               <X className="w-3.5 h-3.5" />
             </button>

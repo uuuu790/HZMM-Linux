@@ -195,7 +195,7 @@ export default function NexusModDetailModal({ mod, t, lang: _lang, onClose, addT
             <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-white/95 dark:from-slate-900/95 via-white/55 dark:via-slate-900/55 to-transparent" />
-          <button onClick={onClose} title="Close"
+          <button onClick={onClose} title={t.close} aria-label={t.close}
             className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 shadow-md active:scale-90 transition-all">
             <X className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
@@ -228,7 +228,7 @@ export default function NexusModDetailModal({ mod, t, lang: _lang, onClose, addT
         <div className="flex-1 overflow-y-auto px-3 sm:px-5 lg:px-8 pb-4 sm:pb-5 lg:pb-8 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-300/50 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700/50 [&::-webkit-scrollbar-thumb]:rounded-full">
           {!loading && !error && (
             <div className="flex gap-1 mb-4 border-b border-slate-200/60 dark:border-slate-700/50">
-              {[['description', t.readmeTitle || '描述'], ['files', `${t.nexusFiles}${visibleFileCount ? ` (${visibleFileCount})` : ''}`]].map(([key, label]) => (
+              {[['description', t.nexusDescriptionTab], ['files', `${t.nexusFiles}${visibleFileCount ? ` (${visibleFileCount})` : ''}`]].map(([key, label]) => (
                 <button key={key} onClick={() => setActiveTab(key)}
                   className={`px-4 py-2.5 text-[13px] font-bold transition-colors ${activeTab === key ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}
                   style={activeTab === key ? { borderBottom: '2px solid var(--accent-500)', marginBottom: '-1px' } : undefined}>
@@ -341,7 +341,7 @@ export default function NexusModDetailModal({ mod, t, lang: _lang, onClose, addT
                     );
                   })}
                   {Object.keys(groupedFiles).length === 0 && (
-                    <p className="text-xs text-slate-400 dark:text-slate-500 italic">No downloadable files.</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 italic">{t.nexusNoFiles}</p>
                   )}
                 </div>
               )}

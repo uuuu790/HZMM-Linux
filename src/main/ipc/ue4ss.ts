@@ -6,6 +6,8 @@ import logger from '../services/logger'
 import { getLatestRelease, downloadRelease } from '../services/github-release'
 import { extractZip, extractZipRaw } from '../services/archive'
 import { resolveWithin } from '../services/path-safety'
+import { mainText } from '../services/main-text'
+import { currentLocale } from './locale'
 import type { Ue4ssStatus } from './types'
 
 type MainWindow = BrowserWindow | null | undefined
@@ -263,9 +265,10 @@ async function doInstallFromFile(mainWindow: MainWindow): Promise<{ canceled: tr
   const installPath = getBinariesPath()
   if (!installPath) throw new Error('GAME_PATH_NOT_FOUND')
 
+  const text = mainText(currentLocale())
   const options: OpenDialogOptions = {
-    title: 'UE4SS zip',
-    filters: [{ name: 'UE4SS archive (*.zip)', extensions: ['zip'] }],
+    title: text.ue4ssZipTitle,
+    filters: [{ name: text.ue4ssZipFilter, extensions: ['zip'] }],
     properties: ['openFile']
   }
   // Same dialog as before: parented to the main window when there is one.

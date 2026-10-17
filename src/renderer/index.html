@@ -18,92 +18,350 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; frame-src 'none'" />
     <title>HZMM Manager</title>
     <style>
+      /* Splash: liquid brand mark, driven by public/splash.js and App.jsx.
+         1. Once the interface underneath has had its first paint (unseen),
+            droplets fly in from beyond the window edges and settle into a
+            ring that keeps circling, with the HZMM wordmark and a loading
+            line below, for as long as the app takes to load.
+         2. When the app is ready, a pre-rendered clip (public/
+            splash-liquid.webm, scripts/render-splash-liquid.cjs; video plays
+            off the main thread) takes the ring over in place, turned to its
+            current angle, and swirls it into a wobbling pool that ripples
+            and becomes the logo.
+         3. A liquid wave opens the backdrop from the logo out past the far
+            corner onto the interface, and the logo flies onto the sidebar.
+         Everything that moves is a transform, an opacity or the clip; the
+         interface's own animations are held while the splash is up, so the
+         GPU has nothing else to draw. The clip is drawn in the logo's own
+         orange and themed with the logo's hue-rotate; the droplets get the
+         same colours pre-computed by the preload. Theme colours, mode and
+         status text come from --s-* properties the preload injects from the
+         last session; without them it is dark ember, zh-TW. The CSP allows
+         no inline script: CSS here, logic in splash.js. */
       #splash-screen {
-        position: fixed; inset: 0; z-index: 99999;
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        background: #020617;
+        --bg: var(--s-bg, #020617);
+        --muted: var(--s-muted, #64748b);
+        --accent: var(--s-accent, 249, 115, 22);
+        --from: var(--s-from, #f97316);
+        --to: var(--s-to, #dc2626);
+        --hue: var(--s-hue, 0deg);
+        position: fixed; inset: 0; z-index: 99999; overflow: hidden;
+        display: flex; align-items: center; justify-content: center;
+        font-family: "Segoe UI", "Microsoft JhengHei", system-ui, -apple-system, sans-serif;
         -webkit-app-region: drag;
-        transition: opacity 0.5s ease, transform 0.5s ease, filter 0.5s ease;
+        transition: opacity 0.5s ease 0.15s;
       }
-      #splash-screen.exit {
-        opacity: 0; transform: scale(1.04); filter: blur(6px);
+      /* The interface stays out of the GPU's way while the splash moves.
+         Hidden at first; splash.js then has it paint once ("prepaint",
+         behind a 99.6%-opaque backdrop), before anything starts moving, as
+         that first paint (glass and gradients rasterised on the GPU) stalled
+         every animation it overlapped. Once that is on screen ("painted") it
+         drops to opacity 0: still rasterised, but no longer composited every
+         frame under the splash, its glass filters and all, until the wave
+         opens onto it. Its endless loops (ambient light, logo breath, glows,
+         spinners) wait for the splash to go; one-shot entrances still play,
+         so the content is in place when the wave reveals it. */
+      html:has(#splash-screen:not(.prepaint):not(.handoff):not(.exit)) #root { visibility: hidden; }
+      html:has(#splash-screen.painted:not(.handoff):not(.exit)) #root { opacity: 0; }
+      html:has(#splash-screen) #root :is(.ambient-key, .logo-breath, .ambient-loop, .animate-spin, .animate-pulse) { animation-play-state: paused !important; }
+      #splash-bg {
+        position: absolute; inset: 0;
+        background: var(--bg);
+      }
+      #splash-screen.prepaint:not(.painted) #splash-bg { opacity: 0.996; }
+      /* The wave: --hole is the radius of the opening in the backdrop,
+         centred on the logo (--hole-x/-y) and run out to --hole-end (past
+         the farthest corner), both measured by App.jsx. */
+      @property --hole { syntax: '<length>'; inherits: true; initial-value: -120px; }
+      #splash-screen.handoff {
+        --hole: var(--hole-end, 150vmax);
+        transition: --hole 0.85s cubic-bezier(0.5, 0.05, 0.3, 1);
+      }
+      /* Glowing wavefront riding the soft edge of the opening. */
+      #splash-wave {
+        position: absolute; inset: 0;
+        background: rgba(var(--accent), 0.32);
+        opacity: 0;
         pointer-events: none;
       }
-      #splash-orb-1 {
-        position: absolute; top: 50%; left: 50%; width: 50vw; height: 50vw;
-        transform: translate(-50%, -50%);
-        border-radius: 50%; filter: blur(140px);
-        background: rgba(249, 115, 22, 0.12);
-        animation: sOrbFloat 20s ease-in-out infinite;
+      /* The masks exist only for the exit: a full-window mask is an extra
+         GPU pass every frame. */
+      #splash-screen.handoff #splash-bg {
+        -webkit-mask-image: radial-gradient(circle at var(--hole-x, 50%) var(--hole-y, 50%), transparent var(--hole), #000 calc(var(--hole) + 110px));
+        mask-image: radial-gradient(circle at var(--hole-x, 50%) var(--hole-y, 50%), transparent var(--hole), #000 calc(var(--hole) + 110px));
       }
-      #splash-orb-2 {
-        position: absolute; top: 30%; left: 25%; width: 25vw; height: 25vw;
-        border-radius: 50%; filter: blur(100px);
-        background: rgba(232, 121, 249, 0.1);
-        animation: sOrbFloat2 25s ease-in-out infinite;
+      #splash-screen.handoff #splash-wave {
+        -webkit-mask-image: radial-gradient(circle at var(--hole-x, 50%) var(--hole-y, 50%), transparent calc(var(--hole) - 20px), #000 calc(var(--hole) + 34px), transparent calc(var(--hole) + 110px));
+        mask-image: radial-gradient(circle at var(--hole-x, 50%) var(--hole-y, 50%), transparent calc(var(--hole) - 20px), #000 calc(var(--hole) + 34px), transparent calc(var(--hole) + 110px));
+        animation: sWave 0.85s ease-out forwards;
       }
+      #splash-screen.exit, #splash-screen.handoff { pointer-events: none; }
+      /* Plain exit (no sidebar target, reduced motion): everything fades. */
+      #splash-screen.exit { opacity: 0; }
+      #splash-mark {
+        position: relative;
+        display: flex; flex-direction: column; align-items: center;
+        transform: translateY(-3vh);
+      }
+      #splash-screen.handoff #splash-halo,
+      #splash-screen.handoff #splash-name,
+      #splash-screen.handoff #splash-sub,
+      #splash-screen.handoff #splash-status,
+      #splash-screen.exit #splash-status { opacity: 0; transition: opacity 0.25s ease; animation: none; }
+
+      /* Halo centred on the logo: swells in under the ring, then breathes. */
+      #splash-halo {
+        position: absolute; left: 50%; top: 48px; width: 520px; height: 520px;
+        margin: -260px 0 0 -260px;
+        background: radial-gradient(closest-side, rgba(var(--accent), 0.16), rgba(var(--accent), 0.06) 45%, transparent);
+        opacity: 0; transform: scale(0.6);
+        animation: sHalo 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.6s forwards, sBreath 3.6s ease-in-out 2s infinite alternate;
+        pointer-events: none;
+      }
+      /* Its own layer from the start, so the flight needs no re-layering. */
+      #splash-emblem { position: relative; width: 96px; height: 96px; will-change: transform; }
+      #splash-screen.fly #splash-emblem {
+        transform: translate(var(--fly-x), var(--fly-y)) scale(var(--fly-s));
+        transition: transform 0.7s cubic-bezier(0.65, 0, 0.25, 1);
+      }
+      /* Theme hue shift (as on the sidebar logo) and the lift shadow apply to
+         the clip and the logo alike; the squash plays here during the flight. */
+      #splash-body {
+        position: absolute; inset: 0;
+        filter: hue-rotate(var(--hue)) drop-shadow(0 14px 30px rgba(var(--accent), 0.3));
+      }
+      #splash-screen.fly #splash-body { animation: sSquash 0.7s cubic-bezier(0.65, 0, 0.25, 1); }
+      /* 240px stage centred on the 96px emblem, hidden until it takes the
+         ring over; splash.js sets --spin-from to the ring's angle and
+         --spin-to to the nearest upright turn, so the clip starts where the
+         ring is and the logo lands straight. */
+      #splash-spin {
+        position: absolute; left: -72px; top: -72px; width: 240px; height: 240px;
+        visibility: hidden;
+        will-change: transform;
+      }
+      #splash-screen.forming #splash-spin {
+        visibility: visible;
+        animation: sSpin 1.2s cubic-bezier(0.45, 0, 0.35, 1) forwards;
+      }
+      #splash-liquid {
+        width: 240px; height: 240px;
+        /* Tailwind's preflight caps video at max-width 100% (the 96px emblem). */
+        max-width: none; max-height: none;
+        pointer-events: none;
+      }
+      /* The static logo: identical to the clip's last frame, it takes over
+         for the flight and stands in if the clip cannot play. */
       #splash-logo {
-        width: 108px; height: 108px;
+        position: absolute; inset: 0;
         background: url('data:image/png;base64,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') center/contain no-repeat;
         border-radius: 50%;
-        opacity: 0; transform: scale(0.6); filter: blur(8px);
-        animation: sLogoIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards,
-                   sLogoPulse 2.5s ease-in-out 0.8s infinite;
+        opacity: 0;
       }
-      #splash-title {
-        margin-top: 24px;
-        font: 900 36px/1 system-ui, -apple-system, sans-serif;
-        letter-spacing: 0.3em;
-        background: linear-gradient(to right, #f97316, #dc2626);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        background-clip: text;
-        opacity: 0; transform: translateY(12px);
-        animation: sTextIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
+      #splash-screen.fly #splash-logo { opacity: 1; }
+      #splash-screen.fly #splash-spin { visibility: hidden; }
+      /* Same gradient wordmark as the sidebar, tracking in below the ring
+         (lowered clear of it), then rising to sit under the logo as the
+         ring condenses; trailing tracking is balanced by the same left
+         padding. */
+      #splash-name, #splash-sub {
+        translate: 0 52px;
+        transition: translate 0.9s cubic-bezier(0.3, 0, 0.2, 1) 0.55s;
       }
-      #splash-bar-track {
-        margin-top: 36px; width: 120px; height: 2px;
-        border-radius: 1px; background: rgba(255,255,255,0.06);
-        overflow: hidden;
+      #splash-screen.forming #splash-name, #splash-screen.forming #splash-sub { translate: 0 0; }
+      #splash-name {
+        margin-top: 26px;
+        padding-left: 0.28em;
+        font: 900 34px/1 "Segoe UI", system-ui, -apple-system, sans-serif;
+        letter-spacing: 0.28em;
+        background: linear-gradient(to right, var(--from), var(--to));
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        opacity: 0;
+        animation: sTrack 0.9s cubic-bezier(0.16, 1, 0.3, 1) 1.1s forwards;
       }
-      #splash-bar {
-        width: 100%; height: 100%; border-radius: 1px;
-        background: linear-gradient(to right, #f97316, #dc2626);
-        transform-origin: center;
-        animation: sBarPulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      #splash-sub {
+        margin-top: 12px;
+        padding-left: 0.34em;
+        font: 600 11px/1 "Segoe UI", system-ui, -apple-system, sans-serif;
+        letter-spacing: 0.34em;
+        color: var(--muted);
+        opacity: 0;
+        animation: sFade 0.7s ease 1.4s forwards;
       }
-      @keyframes sLogoIn {
-        to { opacity: 1; transform: scale(1); filter: blur(0); }
+      #splash-status {
+        position: absolute; left: 0; right: 0; bottom: 13vh;
+        display: flex; align-items: center; justify-content: center; gap: 10px;
+        font-size: 12px; color: var(--muted);
+        opacity: 0;
+        animation: sFade 0.5s ease 1.7s forwards;
       }
-      @keyframes sLogoPulse {
-        0%, 100% { box-shadow: 0 0 30px rgba(249,115,22,0.25), 0 0 60px rgba(249,115,22,0.08); transform: scale(1); }
-        50% { box-shadow: 0 0 50px rgba(249,115,22,0.4), 0 0 100px rgba(249,115,22,0.15); transform: scale(1.05); }
+      #splash-status::after { content: var(--s-status, "正在載入模組…"); }
+      #splash-dots { display: flex; gap: 5px; }
+      #splash-dots i {
+        width: 5px; height: 5px; border-radius: 50%;
+        background: rgba(var(--accent), 0.9);
+        animation: sDot 1.2s ease-in-out infinite;
       }
-      @keyframes sTextIn {
-        from { opacity: 0; transform: translateY(12px); letter-spacing: 0.5em; }
-        to { opacity: 1; transform: translateY(0); letter-spacing: 0.3em; }
+      #splash-dots i:nth-child(2) { animation-delay: 0.15s; }
+      #splash-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+      /* Droplets: a vortex seen from above. They pour in from beyond the
+         window edges along spirals, turning faster the closer they get
+         (angular speed grows as the radius shrinks; the keyframes below are
+         sampled from that motion by scripts/splash-vortex-keyframes.cjs,
+         each drop stretched along its heading),
+         and settle onto the clip's start ring (angle --a, radius --r, size
+         --s: keep in step with scripts/render-splash-liquid.cjs). The ring
+         then keeps circling at 180 deg/s, the clip's opening spin, each drop
+         bobbing gently, until the clip takes over and winds them in faster
+         still. Each main drop has a smaller satellite on a wider spiral that
+         melts into it on arrival. Colours come pre-hue-rotated from the
+         preload (--drip-*): a filter here would be a window-sized offscreen
+         pass every frame. Every drop is its own layer. */
+      #splash-drips {
+        position: absolute; left: 50%; top: 48px; width: 0; height: 0;
+        will-change: transform;
+        animation: sLoop 2s linear 1.7s infinite;
+        pointer-events: none;
       }
-      @keyframes sBarPulse {
-        0%, 100% { opacity: 0.4; transform: scaleX(0.3); }
-        50% { opacity: 1; transform: scaleX(1); }
+      #splash-screen.forming #splash-drips { visibility: hidden; animation-play-state: paused; }
+      .drip {
+        position: absolute; left: 0; top: 0;
+        will-change: transform, opacity;
+        opacity: 0;
+        animation: sVortex calc(1.7s - var(--d)) linear var(--d) both;
       }
-      @keyframes sOrbFloat {
-        0%, 100% { transform: translate(-50%, -50%) scale(1); }
-        50% { transform: translate(-45%, -55%) scale(1.1); }
+      .drip.sat { animation: sVortexSat calc(1.7s - var(--d)) linear var(--d) both, sFadeOut 0.12s linear 1.75s forwards; }
+      .drip i {
+        position: absolute;
+        width: calc(var(--s) * 2); height: calc(var(--s) * 2);
+        margin: calc(var(--s) * -1) 0 0 calc(var(--s) * -1);
+        border-radius: 50%;
+        will-change: transform;
+        background: radial-gradient(circle at 40% 34%, var(--drip-1, #ffd6b0) 0 6%, var(--drip-2, #f7772a) 32%, var(--drip-3, #e3452a) 78%, var(--drip-4, #c92a20));
+        box-shadow: inset -2px -3px 5px var(--drip-5, rgba(120, 20, 10, 0.35));
+        animation: sBob var(--bob, 1.4s) ease-in-out 1.7s infinite alternate;
       }
-      @keyframes sOrbFloat2 {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.15) translateX(3vw); }
+      @keyframes sVortex {
+        0% { transform: rotate(calc(var(--a) - 217.0deg)) translateX(calc(var(--r) * 9.000)) rotate(100.9deg) scale(2.200, 0.674); opacity: 0.00; }
+        4.17% { transform: rotate(calc(var(--a) - 209.3deg)) translateX(calc(var(--r) * 8.537)) rotate(111.7deg) scale(2.200, 0.674); opacity: 0.42; }
+        8.33% { transform: rotate(calc(var(--a) - 201.5deg)) translateX(calc(var(--r) * 8.082)) rotate(112.3deg) scale(2.200, 0.674); opacity: 0.83; }
+        12.5% { transform: rotate(calc(var(--a) - 193.7deg)) translateX(calc(var(--r) * 7.636)) rotate(113.0deg) scale(2.200, 0.674); opacity: 1; }
+        16.67% { transform: rotate(calc(var(--a) - 185.8deg)) translateX(calc(var(--r) * 7.198)) rotate(113.7deg) scale(2.200, 0.674); opacity: 1; }
+        20.83% { transform: rotate(calc(var(--a) - 178.0deg)) translateX(calc(var(--r) * 6.768)) rotate(114.4deg) scale(2.200, 0.674); opacity: 1; }
+        25% { transform: rotate(calc(var(--a) - 170.0deg)) translateX(calc(var(--r) * 6.348)) rotate(115.2deg) scale(2.200, 0.674); opacity: 1; }
+        29.17% { transform: rotate(calc(var(--a) - 162.0deg)) translateX(calc(var(--r) * 5.937)) rotate(116.0deg) scale(2.200, 0.674); opacity: 1; }
+        33.33% { transform: rotate(calc(var(--a) - 154.0deg)) translateX(calc(var(--r) * 5.535)) rotate(116.9deg) scale(2.200, 0.674); opacity: 1; }
+        37.5% { transform: rotate(calc(var(--a) - 145.8deg)) translateX(calc(var(--r) * 5.143)) rotate(117.8deg) scale(2.200, 0.674); opacity: 1; }
+        41.67% { transform: rotate(calc(var(--a) - 137.5deg)) translateX(calc(var(--r) * 4.762)) rotate(118.7deg) scale(2.200, 0.674); opacity: 1; }
+        45.83% { transform: rotate(calc(var(--a) - 129.3deg)) translateX(calc(var(--r) * 4.391)) rotate(119.6deg) scale(2.200, 0.674); opacity: 1; }
+        50% { transform: rotate(calc(var(--a) - 120.8deg)) translateX(calc(var(--r) * 4.031)) rotate(120.6deg) scale(2.200, 0.674); opacity: 1; }
+        54.17% { transform: rotate(calc(var(--a) - 112.2deg)) translateX(calc(var(--r) * 3.684)) rotate(121.6deg) scale(2.200, 0.674); opacity: 1; }
+        58.33% { transform: rotate(calc(var(--a) - 103.6deg)) translateX(calc(var(--r) * 3.349)) rotate(122.7deg) scale(2.200, 0.674); opacity: 1; }
+        62.5% { transform: rotate(calc(var(--a) - 94.7deg)) translateX(calc(var(--r) * 3.026)) rotate(123.7deg) scale(2.200, 0.674); opacity: 1; }
+        66.67% { transform: rotate(calc(var(--a) - 85.6deg)) translateX(calc(var(--r) * 2.718)) rotate(124.7deg) scale(2.200, 0.674); opacity: 1; }
+        70.83% { transform: rotate(calc(var(--a) - 76.4deg)) translateX(calc(var(--r) * 2.425)) rotate(125.6deg) scale(2.200, 0.674); opacity: 1; }
+        75% { transform: rotate(calc(var(--a) - 66.8deg)) translateX(calc(var(--r) * 2.149)) rotate(126.3deg) scale(2.200, 0.674); opacity: 1; }
+        79.17% { transform: rotate(calc(var(--a) - 56.9deg)) translateX(calc(var(--r) * 1.890)) rotate(126.8deg) scale(2.200, 0.674); opacity: 1; }
+        83.33% { transform: rotate(calc(var(--a) - 46.6deg)) translateX(calc(var(--r) * 1.651)) rotate(126.9deg) scale(2.200, 0.674); opacity: 1; }
+        87.5% { transform: rotate(calc(var(--a) - 35.8deg)) translateX(calc(var(--r) * 1.435)) rotate(126.3deg) scale(2.200, 0.674); opacity: 1; }
+        91.67% { transform: rotate(calc(var(--a) - 24.5deg)) translateX(calc(var(--r) * 1.247)) rotate(124.3deg) scale(2.180, 0.677); opacity: 1; }
+        95.83% { transform: rotate(calc(var(--a) - 12.6deg)) translateX(calc(var(--r) * 1.093)) rotate(119.2deg) scale(2.033, 0.701); opacity: 1; }
+        100% { transform: rotate(calc(var(--a) - 0.0deg)) translateX(calc(var(--r) * 1.000)) rotate(90deg) scale(1.850, 0.735); opacity: 1; }
+      }
+      @keyframes sVortexSat {
+        0% { transform: rotate(calc(var(--a) - 282.1deg)) translateX(calc(var(--r) * 9.000)) rotate(100.9deg) scale(2.200, 0.674); opacity: 0.00; }
+        4.17% { transform: rotate(calc(var(--a) - 272.0deg)) translateX(calc(var(--r) * 8.537)) rotate(111.7deg) scale(2.200, 0.674); opacity: 0.42; }
+        8.33% { transform: rotate(calc(var(--a) - 262.0deg)) translateX(calc(var(--r) * 8.082)) rotate(112.3deg) scale(2.200, 0.674); opacity: 0.83; }
+        12.5% { transform: rotate(calc(var(--a) - 251.8deg)) translateX(calc(var(--r) * 7.636)) rotate(113.0deg) scale(2.200, 0.674); opacity: 1; }
+        16.67% { transform: rotate(calc(var(--a) - 241.6deg)) translateX(calc(var(--r) * 7.198)) rotate(113.7deg) scale(2.200, 0.674); opacity: 1; }
+        20.83% { transform: rotate(calc(var(--a) - 231.4deg)) translateX(calc(var(--r) * 6.768)) rotate(114.4deg) scale(2.200, 0.674); opacity: 1; }
+        25% { transform: rotate(calc(var(--a) - 221.0deg)) translateX(calc(var(--r) * 6.348)) rotate(115.2deg) scale(2.200, 0.674); opacity: 1; }
+        29.17% { transform: rotate(calc(var(--a) - 210.6deg)) translateX(calc(var(--r) * 5.937)) rotate(116.0deg) scale(2.200, 0.674); opacity: 1; }
+        33.33% { transform: rotate(calc(var(--a) - 200.1deg)) translateX(calc(var(--r) * 5.535)) rotate(116.9deg) scale(2.200, 0.674); opacity: 1; }
+        37.5% { transform: rotate(calc(var(--a) - 189.5deg)) translateX(calc(var(--r) * 5.143)) rotate(117.8deg) scale(2.200, 0.674); opacity: 1; }
+        41.67% { transform: rotate(calc(var(--a) - 178.8deg)) translateX(calc(var(--r) * 4.762)) rotate(118.7deg) scale(2.200, 0.674); opacity: 1; }
+        45.83% { transform: rotate(calc(var(--a) - 168.0deg)) translateX(calc(var(--r) * 4.391)) rotate(119.6deg) scale(2.200, 0.674); opacity: 1; }
+        50% { transform: rotate(calc(var(--a) - 157.1deg)) translateX(calc(var(--r) * 4.031)) rotate(120.6deg) scale(2.200, 0.674); opacity: 1; }
+        54.17% { transform: rotate(calc(var(--a) - 145.9deg)) translateX(calc(var(--r) * 3.684)) rotate(121.6deg) scale(2.200, 0.674); opacity: 1; }
+        58.33% { transform: rotate(calc(var(--a) - 134.6deg)) translateX(calc(var(--r) * 3.349)) rotate(122.7deg) scale(2.200, 0.674); opacity: 1; }
+        62.5% { transform: rotate(calc(var(--a) - 123.1deg)) translateX(calc(var(--r) * 3.026)) rotate(123.7deg) scale(2.200, 0.674); opacity: 1; }
+        66.67% { transform: rotate(calc(var(--a) - 111.3deg)) translateX(calc(var(--r) * 2.718)) rotate(124.7deg) scale(2.200, 0.674); opacity: 1; }
+        70.83% { transform: rotate(calc(var(--a) - 99.3deg)) translateX(calc(var(--r) * 2.425)) rotate(125.6deg) scale(2.200, 0.674); opacity: 1; }
+        75% { transform: rotate(calc(var(--a) - 86.8deg)) translateX(calc(var(--r) * 2.149)) rotate(126.3deg) scale(2.200, 0.674); opacity: 1; }
+        79.17% { transform: rotate(calc(var(--a) - 73.9deg)) translateX(calc(var(--r) * 1.890)) rotate(126.8deg) scale(2.200, 0.674); opacity: 1; }
+        83.33% { transform: rotate(calc(var(--a) - 60.6deg)) translateX(calc(var(--r) * 1.651)) rotate(126.9deg) scale(2.200, 0.674); opacity: 1; }
+        87.5% { transform: rotate(calc(var(--a) - 46.6deg)) translateX(calc(var(--r) * 1.435)) rotate(126.3deg) scale(2.200, 0.674); opacity: 1; }
+        91.67% { transform: rotate(calc(var(--a) - 31.8deg)) translateX(calc(var(--r) * 1.247)) rotate(124.3deg) scale(2.180, 0.677); opacity: 1; }
+        95.83% { transform: rotate(calc(var(--a) - 16.3deg)) translateX(calc(var(--r) * 1.093)) rotate(119.2deg) scale(2.033, 0.701); opacity: 1; }
+        100% { transform: rotate(calc(var(--a) - 0.0deg)) translateX(calc(var(--r) * 1.000)) rotate(90deg) scale(1.850, 0.735); opacity: 1; }
+      }
+      @keyframes sBob { 0% { translate: 0 0; } 50% { translate: 0 2.5px; } 100% { translate: 0 -2.5px; } }
+      @keyframes sLoop { to { transform: rotate(360deg); } }
+      @keyframes sSpin { from { transform: rotate(var(--spin-from, 0deg)); } to { transform: rotate(var(--spin-to, 0deg)); } }
+      @keyframes sFade { to { opacity: 1; } }
+      @keyframes sFadeOut { to { opacity: 0; } }
+      @keyframes sWave { 0% { opacity: 0; } 12% { opacity: 1; } 70% { opacity: 0.8; } 100% { opacity: 0; } }
+      @keyframes sHalo { to { opacity: 1; transform: none; } }
+      @keyframes sBreath { from { opacity: 1; } to { opacity: 0.7; } }
+      @keyframes sTrack {
+        from { opacity: 0; letter-spacing: 0.5em; padding-left: 0.5em; }
+        to { opacity: 1; letter-spacing: 0.28em; padding-left: 0.28em; }
+      }
+      @keyframes sDot { 0%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+      /* Liquid in flight: stretches along the move, then splats and settles. */
+      @keyframes sSquash {
+        0% { transform: none; }
+        30% { transform: scale(1.12, 0.9); }
+        65% { transform: scale(0.92, 1.08); }
+        85% { transform: scale(1.04, 0.97); }
+        100% { transform: none; }
+      }
+      /* Everything waits for splash.js to start it ("go"). */
+      #splash-screen:not(.go) *, #splash-screen:not(.go) *::after { animation-play-state: paused !important; }
+      @media (prefers-reduced-motion: reduce) {
+        #splash-spin, #splash-drips { display: none; }
+        #splash-screen.go #splash-logo { opacity: 1; }
+        #splash-screen * { animation-duration: 1ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; }
       }
     </style>
   </head>
   <body>
-    <div id="splash-screen">
-      <div id="splash-orb-1"></div>
-      <div id="splash-orb-2"></div>
-      <div id="splash-logo"></div>
-      <div id="splash-title">HZMM</div>
-      <div id="splash-bar-track"><div id="splash-bar"></div></div>
+    <div id="splash-screen" aria-hidden="true">
+      <div id="splash-bg"></div>
+      <div id="splash-wave"></div>
+      <div id="splash-mark">
+        <div id="splash-halo"></div>
+        <div id="splash-drips">
+          <div class="drip" style="--a: 8deg; --r: 92px; --s: 13.5px; --d: 0s; --bob: 1.3s"><i></i></div>
+          <div class="drip" style="--a: 62deg; --r: 78px; --s: 9px; --d: 0.06s; --bob: 1.7s"><i></i></div>
+          <div class="drip" style="--a: 118deg; --r: 96px; --s: 12px; --d: 0.02s; --bob: 1.5s"><i></i></div>
+          <div class="drip" style="--a: 176deg; --r: 74px; --s: 8px; --d: 0.1s; --bob: 1.9s"><i></i></div>
+          <div class="drip" style="--a: 228deg; --r: 90px; --s: 14px; --d: 0.01s; --bob: 1.4s"><i></i></div>
+          <div class="drip" style="--a: 286deg; --r: 82px; --s: 10px; --d: 0.07s; --bob: 1.6s"><i></i></div>
+          <div class="drip" style="--a: 330deg; --r: 100px; --s: 6.5px; --d: 0.12s; --bob: 1.2s"><i></i></div>
+          <div class="drip sat" style="--a: 8deg; --r: 92px; --s: 6.8px; --d: 0.14s;"><i></i></div>
+          <div class="drip sat" style="--a: 62deg; --r: 78px; --s: 4.5px; --d: 0.23s;"><i></i></div>
+          <div class="drip sat" style="--a: 118deg; --r: 96px; --s: 6px; --d: 0.22s;"><i></i></div>
+          <div class="drip sat" style="--a: 176deg; --r: 74px; --s: 4px; --d: 0.24s;"><i></i></div>
+          <div class="drip sat" style="--a: 228deg; --r: 90px; --s: 7px; --d: 0.18s;"><i></i></div>
+          <div class="drip sat" style="--a: 286deg; --r: 82px; --s: 5px; --d: 0.27s;"><i></i></div>
+          <div class="drip sat" style="--a: 330deg; --r: 100px; --s: 3.3px; --d: 0.26s;"><i></i></div>
+        </div>
+        <div id="splash-emblem">
+          <div id="splash-body">
+            <div id="splash-logo"></div>
+            <div id="splash-spin">
+              <video id="splash-liquid" src="./splash-liquid.webm" muted playsinline disablepictureinpicture preload="auto"></video>
+            </div>
+          </div>
+        </div>
+        <div id="splash-name">HZMM</div>
+        <div id="splash-sub">HUMANITZ MOD MANAGER</div>
+      </div>
+      <div id="splash-status"><div id="splash-dots"><i></i><i></i><i></i></div></div>
     </div>
+    <script src="./splash.js"></script>
     <div id="root"></div>
     <script type="module" src="./src/main.jsx"></script>
   </body>

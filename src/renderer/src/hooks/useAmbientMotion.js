@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-// Pauses the decorative infinite loops (background orbs, logo breath, launch
+// Pauses the decorative infinite loops (background light, logo breath, launch
 // glow) whenever nobody is watching: window unfocused or hidden, no input for
 // IDLE_MS, or reduced motion requested. While any of them runs, Chromium keeps
 // producing frames and every frame re-blurs all the backdrop-filter glass on
@@ -8,7 +8,7 @@ import { useEffect } from 'react';
 // so there is no visible jump.
 //
 // Elements opt in via the CSS selectors under `.ambient-paused` in
-// appStyles.js (orb-float-*, logo-breath, ambient-loop).
+// appStyles.js (.ambient-light layers, logo-breath, ambient-loop).
 const IDLE_MS = 8000;
 
 export function useAmbientMotion() {

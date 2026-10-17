@@ -18,6 +18,11 @@ const GlassCard = ({ children, className = '', isPill = true, onClick, style }) 
     cardRef.current.style.setProperty('--glow-y', '50%');
   };
 
+  // No backdrop-filter: behind these cards is only the smooth ambient light,
+  // so a blur changes nothing visible, and inside the scroller Chromium leaves
+  // stale blurred strips along card edges after a wheel scroll (they show
+  // while the window is unfocused, when the ambient loop that would repaint
+  // them is paused).
   return (
     <div
       ref={cardRef}
@@ -27,7 +32,7 @@ const GlassCard = ({ children, className = '', isPill = true, onClick, style }) 
       onMouseLeave={handleMouseLeave}
       className={`
         glass-glow relative isolate transform-gpu overflow-hidden ${isPill ? 'rounded-full' : 'rounded-[1.5rem] md:rounded-[2.5rem]'}
-        bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl
+        bg-white/60 dark:bg-slate-900/60
         border border-white/80 dark:border-white/10 shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.15)]
         transition-all duration-500 ease-out outline-none focus:outline-none active:outline-none ring-0 focus:ring-0 [-webkit-tap-highlight-color:transparent]
         hover:bg-white/80 dark:hover:bg-slate-800/80 hover:border-white/90 dark:hover:border-white/20

@@ -305,7 +305,7 @@ function SettingsTab({
               type="password"
               value={nexusApiKey}
               onChange={(e) => handleSetNexusApiKey(e.target.value)}
-              placeholder="API Key..."
+              placeholder={t.nexusApiKeyPlaceholder}
               aria-label={t.nexusApiKey || 'Nexus Mods API Key'}
               // Block Chromium / password-manager autofill — was observed
               // wiping the saved key on app launch (mount-time autofill

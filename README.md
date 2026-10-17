@@ -124,16 +124,21 @@ Output: `dist/HZMM Manager-<version>.AppImage` and `dist/HZMM Manager-<version>.
 npm run test          # unit tests (one-shot)
 npm run test:watch    # unit tests (watch mode)
 npx playwright test   # E2E tests (requires built Electron app)
+npm run test:sim      # packaged-app simulation against a fake Steam/Proton setup
 ```
+
+`test:sim` builds `dist/linux-unpacked` and drives it through installs (zip / 7z / rar / Windows-made zips), conflicts, profiles, Proton saves, launch + game detection, vanilla launch, nxm:// and autostart — all inside a throwaway `HOME`. It needs a display (`xvfb-run -a npm run test:sim` on headless machines or WSL without WSLg); the `.rar` case runs only when `rar` is installed and the nxm case only with `xdg-utils`.
 
 ## Relationship to upstream HZMM
 
 This is a Linux fork of [HZMM](https://github.com/uuuu790/HZMM). The bulk of the codebase is shared; Linux-specific changes are concentrated in:
 
-- `src/main/services/steam-detector.js` — Linux Steam path detection
-- `src/main/services/process-detector.js` — `pgrep` instead of `tasklist`
-- `src/main/ipc/game.js` — launch via `steam://` URL
-- `src/main/ipc/ue4ss.js` — flatten Win64/ue4ss/ layout for Wine
+- `src/main/services/steam-detector.ts` — Linux Steam path detection + Proton prefix
+- `src/main/services/process-detector.ts` — `pgrep` instead of `tasklist`
+- `src/main/ipc/game.ts` — launch via `steam://` URL
+- `src/main/ipc/ue4ss.ts` — flatten Win64/ue4ss/ layout for Wine
+- `src/main/ipc/nxm.ts` — nxm:// via a `.desktop` entry + `xdg-mime`
+- `src/main/ipc/app-update.ts` — in-place AppImage update (deb: manual)
 - `electron-builder.yml` — AppImage / deb targets
 
 ## License

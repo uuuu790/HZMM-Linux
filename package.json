@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test --config=playwright.config.mjs",
+    "test:sim": "electron-vite build && electron-builder --linux dir --config && playwright test --config=playwright.sim.config.mjs",
     "audit": "node scripts/audit.mjs",
     "typecheck": "tsc -b",
     "check:ipc": "node scripts/check-ipc-contract.mjs",

@@ -85,7 +85,7 @@ const NexusLinkModal = ({ isOpen, onClose, mod, onLinked, addToast, t }) => {
             <Link2 className="w-5 h-5 text-orange-500 shrink-0" />
             <span className="truncate">{t.linkNexus || 'Link to Nexus'} — {mod.customName || mod.title || mod.filename}</span>
           </h3>
-          <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors shrink-0">
+          <button onClick={onClose} aria-label={t.close} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors shrink-0">
             <X className="w-4 h-4" />
           </button>
         </div>

@@ -283,7 +283,7 @@ function ModulesTab({
         {/* Hint / Batch action bar — selection hints only make sense with mods present */}
         {modules.length > 0 && !hasSelection && (
           <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium px-2">
-            Ctrl+Click {t.selectAll?.toLowerCase() === '全選' ? '多選' : 'to select'} · Shift+Click {t.selectAll?.toLowerCase() === '全選' ? '範圍選取' : 'for range'}
+            {t.multiSelectHint}
           </p>
         )}
         {hasSelection && (

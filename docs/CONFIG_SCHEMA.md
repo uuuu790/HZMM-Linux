@@ -2,7 +2,7 @@
 
 > `hzmm.config.json` specification for mod authors who want a rich config editor in HZMM.
 >
-> Version: **1.4**. The behavior described here ships in the first HZMM release after v1.6.0.
+> Version: **1.4**. The behavior described here ships in HZMM v1.7.0 (HZMM for Linux v2.0.0).
 > Schemas written for 1.0–1.3 keep working unchanged. What HZMM writes did change: the [keybind format](#keybind), string escaping, and [quoting that follows the schema type](#how-values-are-written), so an edited value can come back as a different Lua type.
 
 ---
